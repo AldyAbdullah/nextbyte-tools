@@ -39,6 +39,12 @@ interface ToolPageProps {
   }>;
 }
 
+export function generateStaticParams() {
+  return TOOLS_REGISTRY.map((tool) => ({
+    slug: tool.slug,
+  }));
+}
+
 export async function generateMetadata({ params }: ToolPageProps): Promise<Metadata> {
   const { slug } = await params;
   const tool = TOOLS_REGISTRY.find((t) => t.slug === slug);
