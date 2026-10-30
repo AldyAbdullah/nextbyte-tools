@@ -111,6 +111,20 @@ export async function renderCompositeCanvas(options: DrawExportOptions): Promise
   const qrOffsetX = padding + borderWidth;
   ctx.drawImage(qrCanvas, qrOffsetX, qrOffsetY, qrSize, qrSize);
 
+  // 4.1 Draw Custom Logo Background Badge & High-Resolution Logo
+  if (config.logo.logoDataUrl) {
+    await drawCustomLogo(ctx, {
+      logoDataUrl: config.logo.logoDataUrl,
+      logoSize: config.logo.logoSize,
+      logoMargin: config.logo.logoMargin,
+      logoBackground: config.logo.logoBackground,
+      centerQrX: qrOffsetX + (qrSize / 2),
+      centerQrY: qrOffsetY + (qrSize / 2),
+      qrSize,
+      scale,
+    });
+  }
+
   let currentY = qrOffsetY + qrSize;
 
   // 5. Draw Frame Banner (if Bottom)
@@ -293,6 +307,127 @@ function drawCameraCorners(
   ctx.restore();
 }
 
+const imageCache = new Map<string, HTMLImageElement>();
+
+export function getCachedImage(src: string): Promise<HTMLImageElement> {
+  if (imageCache.has(src)) {
+    const cached = imageCache.get(src)!;
+    if (cached.complete && cached.naturalWidth > 0) {
+      return Promise.resolve(cached);
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      imageCache.set(src, img);
+      resolve(img);
+    };
+    img.onerror = () => reject(new Error('Failed to load logo image'));
+    img.src = src;
+  });
+}
+
+interface DrawCustomLogoProps {
+  logoDataUrl: string;
+  logoSize: number;
+  logoMargin: number;
+  logoBackground: 'transparent' | 'white' | 'circle-white' | 'square-white';
+  centerQrX: number;
+  centerQrY: number;
+  qrSize: number;
+  scale: number;
+}
+
+async function drawCustomLogo(ctx: CanvasRenderingContext2D, props: DrawCustomLogoProps) {
+  const {
+    logoDataUrl,
+    logoSize,
+    logoMargin,
+    logoBackground,
+    centerQrX,
+    centerQrY,
+    qrSize,
+    scale,
+  } = props;
+
+  const baseLogoSize = qrSize * logoSize;
+  const paddingPx = logoMargin * scale;
+
+  ctx.save();
+
+  // 1. Draw Background Badge Shape
+  if (logoBackground === 'circle-white') {
+    const badgeRadius = (baseLogoSize / 2) + paddingPx;
+    ctx.beginPath();
+    ctx.arc(centerQrX, centerQrY, badgeRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+    ctx.shadowBlur = 4 * scale;
+    ctx.shadowOffsetY = 1 * scale;
+    ctx.fill();
+
+    // Clean subtle edge
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.lineWidth = Math.max(1, 1 * scale);
+    ctx.stroke();
+  } else if (logoBackground === 'square-white') {
+    const badgeSize = baseLogoSize + (paddingPx * 2);
+    const badgeX = centerQrX - (badgeSize / 2);
+    const badgeY = centerQrY - (badgeSize / 2);
+    const badgeRadius = Math.min(14 * scale, badgeSize * 0.22);
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+    ctx.shadowBlur = 4 * scale;
+    ctx.shadowOffsetY = 1 * scale;
+    ctx.fillStyle = '#ffffff';
+    drawRoundedRect(ctx, badgeX, badgeY, badgeSize, badgeSize, badgeRadius);
+    ctx.fill();
+
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.lineWidth = Math.max(1, 1 * scale);
+    ctx.stroke();
+  } else if (logoBackground === 'white') {
+    const badgeSize = baseLogoSize + (paddingPx * 2);
+    const badgeX = centerQrX - (badgeSize / 2);
+    const badgeY = centerQrY - (badgeSize / 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(badgeX, badgeY, badgeSize, badgeSize);
+  }
+
+  ctx.restore();
+
+  // 2. Draw High-Resolution Logo Image
+  try {
+    const img = await getCachedImage(logoDataUrl);
+    const naturalW = img.naturalWidth || baseLogoSize;
+    const naturalH = img.naturalHeight || baseLogoSize;
+    const aspect = naturalW / naturalH;
+
+    let drawW = baseLogoSize;
+    let drawH = baseLogoSize;
+    if (aspect > 1) {
+      drawH = baseLogoSize / aspect;
+    } else if (aspect < 1) {
+      drawW = baseLogoSize * aspect;
+    }
+
+    const drawX = centerQrX - (drawW / 2);
+    const drawY = centerQrY - (drawH / 2);
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    ctx.restore();
+  } catch (err) {
+    console.warn('Could not draw custom logo image:', err);
+  }
+}
+
 /**
  * Trigger download file dari canvas
  */
@@ -301,11 +436,27 @@ export async function downloadCompositeImage(
   format: 'png' | 'jpg',
   fileName: string
 ): Promise<void> {
+  let targetCanvas = canvas;
+
+  if (format === 'jpg') {
+    // Flatten onto solid white background to avoid black background or black transparent corners in JPEG
+    const flattened = document.createElement('canvas');
+    flattened.width = canvas.width;
+    flattened.height = canvas.height;
+    const ctx = flattened.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, flattened.width, flattened.height);
+      ctx.drawImage(canvas, 0, 0);
+      targetCanvas = flattened;
+    }
+  }
+
   const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
-  const quality = format === 'jpg' ? 0.95 : 1.0;
+  const quality = format === 'jpg' ? 0.98 : 1.0;
 
   return new Promise((resolve, reject) => {
-    canvas.toBlob(
+    targetCanvas.toBlob(
       (blob) => {
         if (!blob) {
           reject(new Error('Failed to create image blob'));

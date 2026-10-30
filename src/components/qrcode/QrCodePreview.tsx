@@ -185,12 +185,71 @@ export function QrCodePreview({ config, onSaveToHistory }: QrCodePreviewProps) {
     return () => clearTimeout(timer);
   }, [config, qrCodeInstance, rawPayload, drawLivePreview]);
 
+  // 3.5 Helper to generate a native high-resolution QR canvas at the requested export scale
+  const getExportQrCanvas = async (res: ExportResolution, transparent: boolean): Promise<HTMLCanvasElement> => {
+    if (res === 1 && !transparent && qrRef.current) {
+      const existing = qrRef.current.querySelector('canvas');
+      if (existing) return existing;
+    }
+
+    const QRCodeStyling = (await import('qr-code-styling')).default;
+    const qrSize = 300 * res;
+
+    const instance = new QRCodeStyling({
+      width: qrSize,
+      height: qrSize,
+      data: rawPayload,
+      dotsOptions: {
+        type: config.design.dotsType,
+        color: config.colors.foregroundColor,
+      },
+      cornersSquareOptions: {
+        type: config.design.cornersSquareType,
+        color: config.colors.customCorners ? config.colors.cornersSquareColor : config.colors.foregroundColor,
+      },
+      cornersDotOptions: {
+        type: config.design.cornersDotType,
+        color: config.colors.customCorners ? config.colors.cornersDotColor : config.colors.foregroundColor,
+      },
+      backgroundOptions: {
+        color: (transparent || config.colors.isBackgroundTransparent) ? 'rgba(0,0,0,0)' : config.colors.backgroundColor,
+      },
+      image: config.logo.logoDataUrl || undefined,
+      imageOptions: {
+        crossOrigin: 'anonymous',
+        margin: config.logo.logoMargin * res,
+        imageSize: config.logo.logoSize,
+        hideBackgroundDots: config.logo.logoBackground !== 'transparent',
+      },
+      qrOptions: {
+        errorCorrectionLevel: config.design.errorCorrectionLevel,
+      },
+    });
+
+    const blob = await instance.getRawData('png');
+    if (!blob) throw new Error('Failed to generate high-resolution QR code');
+
+    const img = new Image();
+    const url = URL.createObjectURL(blob as Blob);
+    img.src = url;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+    URL.revokeObjectURL(url);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = qrSize;
+    canvas.height = qrSize;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, qrSize, qrSize);
+    }
+    return canvas;
+  };
+
   // 4. Handle Download
   const handleDownload = async () => {
-    if (!qrRef.current) return;
-    const internalCanvas = qrRef.current.querySelector('canvas');
-    if (!internalCanvas) return;
-
     setIsExporting(true);
 
     try {
@@ -203,9 +262,14 @@ export function QrCodePreview({ config, onSaveToHistory }: QrCodePreviewProps) {
           });
         }
       } else {
-        // High resolution composite canvas export
+        // High resolution composite canvas export at native pixel density
+        const targetQrCanvas = await getExportQrCanvas(
+          resolution,
+          transparentBg || config.colors.isBackgroundTransparent
+        );
+
         const highResCanvas = await renderCompositeCanvas({
-          qrCanvas: internalCanvas,
+          qrCanvas: targetQrCanvas,
           config,
           resolution,
           transparentBackground: transparentBg || config.colors.isBackgroundTransparent,
@@ -244,13 +308,10 @@ export function QrCodePreview({ config, onSaveToHistory }: QrCodePreviewProps) {
 
   // 5. Copy image to clipboard
   const handleCopy = async () => {
-    if (!qrRef.current) return;
-    const internalCanvas = qrRef.current.querySelector('canvas');
-    if (!internalCanvas) return;
-
     try {
+      const targetQrCanvas = await getExportQrCanvas(2, false);
       const highResCanvas = await renderCompositeCanvas({
-        qrCanvas: internalCanvas,
+        qrCanvas: targetQrCanvas,
         config,
         resolution: 2,
         transparentBackground: false,

@@ -1,12 +1,12 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { QrCodeGenerator } from '@/components/qrcode/QrCodeGenerator';
+import { QrCodePageClient } from '@/components/qrcode/QrCodePageClient';
 import { QrCode, ChevronRight, ShieldCheck, Sparkles, Layers } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'QR Code Generator - NextByte Tools',
-  description: 'Buat QR Code kustom profesional dengan pilihan bentuk dots, logo, frame Scan Me, warna custom, dan export resolusi tinggi (PNG, SVG, JPG).',
+  title: 'QR Code Generator (Single & Bulk Excel) - NextByte Tools',
+  description: 'Buat QR Code kustom profesional secara individu maupun massal (bulk) via file Excel dengan pilihan bentuk dots, logo tengah, frame Scan Me, dan export ZIP / PDF HD.',
 };
 
 export default function QrCodeGeneratorPage() {
@@ -40,20 +40,20 @@ export default function QrCodeGeneratorPage() {
               </h1>
             </div>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-2xl">
-              Buat dan modifikasi QR code interaktif dengan logo, template scan frame, custom corner, dan download kualitas print HD.
+              Buat dan modifikasi QR code interaktif satu per satu atau secara massal (Bulk via Excel) lengkap dengan logo, scan frame, dan download kualitas print HD.
             </p>
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> Client-Side Generator
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> 100% Client-Side Generator
             </span>
           </div>
         </div>
       </div>
 
-      {/* Main Generator Tool Component */}
-      <QrCodeGenerator />
+      {/* Main Generator Mode Component (Single & Bulk Excel) */}
+      <QrCodePageClient />
 
       {/* Instructional Guide & FAQ Section below */}
       <div className="mt-16 pt-12 border-t border-slate-200 dark:border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-8">
