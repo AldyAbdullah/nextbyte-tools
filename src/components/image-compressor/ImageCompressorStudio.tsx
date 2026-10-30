@@ -200,15 +200,20 @@ export function ImageCompressorStudio() {
     }
   };
 
-  // Clean up object URLs on unmount
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  // Clean up object URLs only on unmount
   useEffect(() => {
     return () => {
-      items.forEach((item) => {
+      itemsRef.current.forEach((item) => {
         if (item.originalUrl) URL.revokeObjectURL(item.originalUrl);
         if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl);
       });
     };
-  }, [items]);
+  }, []);
 
   // Handle single download
   const handleDownloadSingle = (item: CompressedImageItem) => {
@@ -246,6 +251,9 @@ export function ImageCompressorStudio() {
   // Remove single item
   const handleRemoveItem = (id: string) => {
     setItems((prev) => {
+      const target = prev.find((i) => i.id === id);
+      if (target?.originalUrl) URL.revokeObjectURL(target.originalUrl);
+      if (target?.compressedUrl) URL.revokeObjectURL(target.compressedUrl);
       const filtered = prev.filter((i) => i.id !== id);
       if (selectedIndex >= filtered.length) {
         setSelectedIndex(Math.max(0, filtered.length - 1));
@@ -762,7 +770,7 @@ export function ImageCompressorStudio() {
                 </div>
 
                 {/* Comparison Viewport */}
-                <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 min-h-[340px] max-h-[460px] flex items-center justify-center select-none">
+                <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 h-[360px] sm:h-[460px] w-full flex items-center justify-center select-none">
                   
                   {isProcessingBatch && (
                     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-30 flex items-center justify-center">
@@ -772,36 +780,44 @@ export function ImageCompressorStudio() {
 
                   {/* Mode: Split Screen Slider */}
                   {previewMode === 'split' && (
-                    <div className="relative w-full h-full min-h-[340px] flex items-center justify-center overflow-hidden">
-                      {/* Under layer: Compressed image */}
-                      {selectedItem.compressedUrl && (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={selectedItem.compressedUrl}
-                          alt="Hasil Kompresi"
-                          className="max-w-full max-h-[420px] object-contain select-none pointer-events-none"
-                        />
-                      )}
+                    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                      {/* Under layer: Compressed image (or original fallback) */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={selectedItem.compressedUrl || selectedItem.originalUrl}
+                        alt="Hasil Kompresi"
+                        className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
+                      />
 
                       {/* Top layer: Original image clipped by split slider */}
                       <div
-                        className="absolute inset-0 overflow-hidden flex items-center justify-center"
-                        style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }}
+                        className="absolute inset-0 overflow-hidden pointer-events-none"
+                        style={{ clipPath: `polygon(0 0, ${splitPosition}% 0, ${splitPosition}% 100%, 0 100%)` }}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={selectedItem.originalUrl}
                           alt="Foto Asli"
-                          className="max-w-full max-h-[420px] object-contain select-none pointer-events-none"
+                          className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
+                          onError={() => {
+                            if (selectedItem.originalFile) {
+                              const freshUrl = URL.createObjectURL(selectedItem.originalFile);
+                              setItems((prev) =>
+                                prev.map((it) =>
+                                  it.id === selectedItem.id ? { ...it, originalUrl: freshUrl } : it
+                                )
+                              );
+                            }
+                          }}
                         />
                       </div>
 
                       {/* Split Divider Line */}
                       <div
-                        className="absolute top-0 bottom-0 w-1 bg-white shadow-2xl z-20 pointer-events-none"
+                        className="absolute top-0 bottom-0 w-0.5 bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.8)] z-20 pointer-events-none"
                         style={{ left: `${splitPosition}%` }}
                       >
-                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white text-slate-800 shadow-lg flex items-center justify-center font-bold text-[10px]">
+                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center font-bold text-[10px] border border-white">
                           ⇔
                         </div>
                       </div>
@@ -818,10 +834,10 @@ export function ImageCompressorStudio() {
                       />
 
                       {/* Badges Left & Right */}
-                      <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md text-white text-[10px] font-bold">
+                      <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md text-white text-[10px] font-bold border border-white/10">
                         Foto Asli: {formatFileSize(selectedItem.originalSize)}
                       </div>
-                      <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 rounded-lg bg-emerald-600/90 backdrop-blur-md text-white text-[10px] font-bold">
+                      <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 rounded-lg bg-emerald-600/90 backdrop-blur-md text-white text-[10px] font-bold border border-emerald-400/20">
                         Hasil: {formatFileSize(selectedItem.compressedSize)} (-{selectedItem.reductionPercent}%)
                       </div>
                     </div>
@@ -829,29 +845,39 @@ export function ImageCompressorStudio() {
 
                   {/* Mode: Original Only */}
                   {previewMode === 'original' && (
-                    <div className="relative p-2">
+                    <div className="relative w-full h-full p-2 flex items-center justify-center">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={selectedItem.originalUrl}
                         alt="Foto Asli"
-                        className="max-w-full max-h-[420px] object-contain"
+                        className="max-w-full max-h-[420px] object-contain select-none"
+                        onError={() => {
+                          if (selectedItem.originalFile) {
+                            const freshUrl = URL.createObjectURL(selectedItem.originalFile);
+                            setItems((prev) =>
+                              prev.map((it) =>
+                                it.id === selectedItem.id ? { ...it, originalUrl: freshUrl } : it
+                              )
+                            );
+                          }
+                        }}
                       />
-                      <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-lg bg-black/70 text-white text-xs font-bold">
+                      <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-lg bg-black/75 text-white text-xs font-bold border border-white/10">
                         Asli: {formatFileSize(selectedItem.originalSize)}
                       </div>
                     </div>
                   )}
 
                   {/* Mode: Compressed Only */}
-                  {previewMode === 'compressed' && selectedItem.compressedUrl && (
-                    <div className="relative p-2">
+                  {previewMode === 'compressed' && (
+                    <div className="relative w-full h-full p-2 flex items-center justify-center">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={selectedItem.compressedUrl}
+                        src={selectedItem.compressedUrl || selectedItem.originalUrl}
                         alt="Hasil Kompresi"
-                        className="max-w-full max-h-[420px] object-contain"
+                        className="max-w-full max-h-[420px] object-contain select-none"
                       />
-                      <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold">
+                      <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold border border-emerald-400/20">
                         Hasil: {formatFileSize(selectedItem.compressedSize)} (-{selectedItem.reductionPercent}%)
                       </div>
                     </div>

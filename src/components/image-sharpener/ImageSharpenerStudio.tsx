@@ -249,7 +249,7 @@ export default function ImageSharpenerStudio() {
             if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
           }}
           onClick={() => fileInputRef.current?.click()}
-          className="group relative border-2 border-dashed border-zinc-700 hover:border-cyan-500 bg-zinc-900/60 hover:bg-zinc-900/90 rounded-2xl p-12 text-center cursor-pointer transition-all duration-300 flex flex-col items-center justify-center space-y-4 shadow-xl backdrop-blur-sm"
+          className="group relative border-2 border-dashed border-slate-300 dark:border-zinc-700 hover:border-cyan-500 bg-white/80 dark:bg-zinc-900/60 hover:bg-slate-50 dark:hover:bg-zinc-900/90 rounded-2xl p-12 text-center cursor-pointer transition-all duration-300 flex flex-col items-center justify-center space-y-4 shadow-sm backdrop-blur-sm"
         >
           <input
             ref={fileInputRef}
@@ -260,28 +260,28 @@ export default function ImageSharpenerStudio() {
             onChange={(e) => e.target.files && handleFiles(e.target.files)}
           />
 
-          <div className="w-20 h-20 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-110 group-hover:bg-cyan-500/20 transition-transform duration-300 shadow-inner">
+          <div className="w-20 h-20 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center group-hover:scale-110 group-hover:bg-cyan-500/20 transition-transform duration-300 shadow-inner">
             <UploadCloud className="w-10 h-10" />
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-xl font-bold text-white tracking-wide">
-              Tarik & Lepas Foto di Sini, atau <span className="text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">Pilih Berkas</span>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white tracking-wide">
+              Tarik & Lepas Foto di Sini, atau <span className="text-cyan-600 dark:text-cyan-400 underline decoration-cyan-500/40 underline-offset-4">Pilih Berkas</span>
             </h3>
-            <p className="text-sm text-zinc-400">
-              Mendukung format JPG, PNG, WebP • Bisa salin & tempel (<kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 text-xs font-mono">Ctrl + V</kbd>)
+            <p className="text-sm text-slate-600 dark:text-zinc-400">
+              Mendukung format JPG, PNG, WebP • Bisa salin & tempel (<kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 text-xs font-mono">Ctrl + V</kbd>)
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs text-zinc-400">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-zinc-300">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Unsharp Mask Multi-Pass
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs text-slate-600 dark:text-zinc-400">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700/60 text-slate-700 dark:text-zinc-300">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Unsharp Mask Multi-Pass
             </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-zinc-300">
-              <FileText className="w-3.5 h-3.5 text-blue-400" /> Mode Khusus KTP & Dokumen
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700/60 text-slate-700 dark:text-zinc-300">
+              <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> Mode Khusus KTP & Dokumen
             </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/60 text-zinc-300">
-              <Zap className="w-3.5 h-3.5 text-emerald-400" /> 100% Client-Side Tanpa Server
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700/60 text-slate-700 dark:text-zinc-300">
+              <Zap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> 100% Client-Side Tanpa Server
             </span>
           </div>
         </div>
@@ -290,14 +290,14 @@ export default function ImageSharpenerStudio() {
           {/* Main Visualizer & Split View (8 Cols) */}
           <div className="lg:col-span-7 xl:col-span-8 space-y-6">
             {/* Action Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-zinc-900/80 border border-zinc-800/80 rounded-xl p-3 px-4 backdrop-blur-md">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800/80 rounded-xl p-3 px-4 shadow-sm backdrop-blur-md">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 transition-colors border border-zinc-700/60"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-semibold text-slate-700 dark:text-zinc-200 transition-colors border border-slate-200 dark:border-zinc-700/60"
                 >
-                  <UploadCloud className="w-3.5 h-3.5 text-cyan-400" /> Tambah Foto
+                  <UploadCloud className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Tambah Foto
                 </button>
                 <input
                   ref={fileInputRef}
@@ -313,7 +313,7 @@ export default function ImageSharpenerStudio() {
                     type="button"
                     onClick={handleProcessAll}
                     disabled={isProcessingBatch}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 text-xs font-semibold transition-colors disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-600/20 dark:hover:bg-cyan-600/30 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30 text-xs font-semibold transition-colors disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isProcessingBatch ? 'animate-spin' : ''}`} />
                     Terapkan ke Semua ({items.length})
@@ -326,7 +326,7 @@ export default function ImageSharpenerStudio() {
                   <button
                     type="button"
                     onClick={handleDownloadAllZip}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-600/20 dark:hover:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 text-xs font-semibold transition-colors"
                   >
                     <Archive className="w-3.5 h-3.5" /> Unduh Semua ZIP
                   </button>
@@ -334,7 +334,7 @@ export default function ImageSharpenerStudio() {
                 <button
                   type="button"
                   onClick={handleClearAll}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-950/30 hover:bg-red-900/40 text-red-400 border border-red-800/40 text-xs font-semibold transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/40 text-xs font-semibold transition-colors"
                   title="Hapus semua foto"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Hapus
@@ -344,17 +344,17 @@ export default function ImageSharpenerStudio() {
 
             {/* Split Screen Before / After Canvas Box */}
             {activeItem && (
-              <div className="relative bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="relative bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
                 {/* Header Info */}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900/90 border-b border-zinc-800 text-xs text-zinc-400">
+                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-100/90 dark:bg-zinc-900/90 border-b border-slate-200 dark:border-zinc-800 text-xs text-slate-600 dark:text-zinc-400">
                   <div className="flex items-center gap-2 truncate max-w-sm">
-                    <span className="font-semibold text-zinc-200 truncate">{activeItem.name}</span>
-                    <span className="text-zinc-500">•</span>
+                    <span className="font-semibold text-slate-900 dark:text-zinc-200 truncate">{activeItem.name}</span>
+                    <span className="text-slate-400">•</span>
                     <span>Asli: {formatFileSize(activeItem.originalSize)}</span>
                     {activeItem.processedSize > 0 && (
                       <>
-                        <span className="text-zinc-500">•</span>
-                        <span className="text-cyan-400 font-medium">
+                        <span className="text-slate-400">•</span>
+                        <span className="text-cyan-600 dark:text-cyan-400 font-medium">
                           Hasil: {formatFileSize(activeItem.processedSize)}
                         </span>
                       </>
@@ -368,7 +368,7 @@ export default function ImageSharpenerStudio() {
                       onMouseUp={() => setIsHoldingOriginal(false)}
                       onTouchStart={() => setIsHoldingOriginal(true)}
                       onTouchEnd={() => setIsHoldingOriginal(false)}
-                      className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-medium border border-zinc-700/60 select-none active:bg-cyan-500 active:text-zinc-950 transition-colors"
+                      className="px-2.5 py-1 rounded bg-white hover:bg-slate-50 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[11px] font-medium border border-slate-200 dark:border-zinc-700/60 select-none active:bg-cyan-500 active:text-slate-950 transition-colors shadow-xs"
                     >
                       Tahan = Lihat Asli
                     </button>
@@ -377,8 +377,8 @@ export default function ImageSharpenerStudio() {
                       onClick={() => setZoomLevel((z) => (z === 1 ? 1.75 : 1))}
                       className={`p-1.5 rounded border transition-colors ${
                         zoomLevel > 1
-                          ? 'bg-cyan-500 text-zinc-950 border-cyan-400'
-                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/60'
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400'
+                          : 'bg-white hover:bg-slate-50 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-700/60 shadow-xs'
                       }`}
                       title={zoomLevel > 1 ? 'Reset Zoom (100%)' : 'Perbesar Detail (175%)'}
                     >
@@ -397,11 +397,11 @@ export default function ImageSharpenerStudio() {
                   onTouchStart={() => setIsDraggingSlider(true)}
                   onTouchEnd={() => setIsDraggingSlider(false)}
                   onTouchMove={handleTouchMove}
-                  className="relative h-[380px] sm:h-[480px] w-full flex items-center justify-center select-none overflow-hidden cursor-ew-resize bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:16px_16px]"
+                  className="relative h-[380px] sm:h-[480px] w-full flex items-center justify-center select-none overflow-hidden cursor-ew-resize bg-slate-950 bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:16px_16px]"
                 >
                   {/* Processing Badge */}
                   {activeItem.status === 'processing' && (
-                    <div className="absolute inset-0 z-30 bg-zinc-950/60 backdrop-blur-xs flex items-center justify-center">
+                    <div className="absolute inset-0 z-30 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center">
                       <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900 border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-2xl">
                         <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
                         Mempertajam gambar...
@@ -434,6 +434,14 @@ export default function ImageSharpenerStudio() {
                         alt="Original View"
                         className="absolute inset-0 w-full h-full object-contain pointer-events-none transition-transform duration-150"
                         style={{ transform: `scale(${zoomLevel})` }}
+                        onError={() => {
+                          if (activeItem.originalFile) {
+                            const fresh = URL.createObjectURL(activeItem.originalFile);
+                            setItems((prev) =>
+                              prev.map((it) => (it.id === activeItem.id ? { ...it, originalUrl: fresh } : it))
+                            );
+                          }
+                        }}
                       />
                     </div>
                   )}
@@ -444,31 +452,31 @@ export default function ImageSharpenerStudio() {
                       className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.8)] pointer-events-none z-20"
                       style={{ left: `${sliderPos}%` }}
                     >
-                      <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-cyan-500 border-2 border-white text-zinc-950 flex items-center justify-center shadow-lg font-bold text-xs pointer-events-auto">
+                      <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-cyan-500 border-2 border-white text-slate-950 flex items-center justify-center shadow-lg font-bold text-xs pointer-events-auto">
                         ⬌
                       </div>
                     </div>
                   )}
 
                   {/* Corner Badges */}
-                  <div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-zinc-900/90 border border-zinc-700/80 text-[10px] font-bold text-zinc-300 uppercase tracking-wider backdrop-blur-md">
+                  <div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/75 border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider backdrop-blur-md">
                     Asli (Sebelum)
                   </div>
-                  <div className="absolute top-3 right-3 z-10 px-2 py-1 rounded bg-cyan-950/80 border border-cyan-500/50 text-[10px] font-bold text-cyan-300 uppercase tracking-wider backdrop-blur-md">
+                  <div className="absolute top-3 right-3 z-10 px-2 py-1 rounded bg-cyan-600/90 border border-cyan-400/30 text-[10px] font-bold text-white uppercase tracking-wider backdrop-blur-md">
                     Dipertajam (Sesudah)
                   </div>
                 </div>
 
                 {/* Footer Controls / Single Download */}
-                <div className="p-4 bg-zinc-900/95 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs text-zinc-400">
+                <div className="p-4 bg-white dark:bg-zinc-900/95 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-slate-600 dark:text-zinc-400">
                     Geser pembatas tengah untuk melihat detail perbandingan sebelum & sesudah.
                   </div>
                   <button
                     type="button"
                     onClick={() => handleDownloadSingle(activeItem)}
                     disabled={!activeItem.processedBlob}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all hover:shadow-cyan-500/30 disabled:opacity-40 disabled:pointer-events-none"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/20 transition-all hover:shadow-cyan-500/30 disabled:opacity-40 disabled:pointer-events-none"
                   >
                     <Download className="w-4 h-4" /> Unduh Foto Ini
                   </button>
@@ -478,12 +486,12 @@ export default function ImageSharpenerStudio() {
 
             {/* Thumbnail Queue Carousel */}
             {items.length > 1 && (
-              <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-3">
-                <div className="flex items-center justify-between pb-2 text-xs text-zinc-400 font-medium">
+              <div className="bg-white dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 rounded-xl p-3 shadow-xs">
+                <div className="flex items-center justify-between pb-2 text-xs text-slate-600 dark:text-zinc-400 font-medium">
                   <span>Daftar Foto ({items.length})</span>
                   <span>Klik foto untuk memilih & menyetel</span>
                 </div>
-                <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-zinc-700">
+                <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-zinc-700">
                   {items.map((item) => {
                     const isSelected = item.id === activeItem?.id;
                     return (
@@ -492,8 +500,8 @@ export default function ImageSharpenerStudio() {
                         onClick={() => setSelectedItemId(item.id)}
                         className={`relative group shrink-0 w-24 h-24 rounded-lg overflow-hidden border cursor-pointer transition-all ${
                           isSelected
-                            ? 'border-cyan-400 ring-2 ring-cyan-500/40 scale-102'
-                            : 'border-zinc-800 hover:border-zinc-700 bg-zinc-950'
+                            ? 'border-cyan-500 ring-2 ring-cyan-500/40 scale-102'
+                            : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 bg-slate-100 dark:bg-zinc-950'
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -505,12 +513,12 @@ export default function ImageSharpenerStudio() {
                         <button
                           type="button"
                           onClick={(e) => handleRemoveItem(item.id, e)}
-                          className="absolute top-1 right-1 p-1 rounded bg-zinc-950/80 hover:bg-red-600 text-zinc-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-1 right-1 p-1 rounded bg-black/80 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
                         {item.status === 'done' && (
-                          <div className="absolute bottom-1 right-1 p-0.5 rounded bg-emerald-500 text-zinc-950">
+                          <div className="absolute bottom-1 right-1 p-0.5 rounded bg-emerald-500 text-slate-950">
                             <CheckCircle2 className="w-3 h-3" />
                           </div>
                         )}
@@ -524,21 +532,21 @@ export default function ImageSharpenerStudio() {
 
           {/* Settings Control Panel (4-5 Cols) */}
           <div className="lg:col-span-5 xl:col-span-4 space-y-6">
-            <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-6 space-y-6 shadow-xl backdrop-blur-md">
-              <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
+            <div className="bg-white dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 rounded-2xl p-6 space-y-6 shadow-xl backdrop-blur-md">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-zinc-800">
                 <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
                     <Sliders className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-base">Pengaturan Penajaman</h3>
-                    <p className="text-xs text-zinc-400">Atur intensitas detail dan filter</p>
+                    <h3 className="font-bold text-slate-900 dark:text-white text-base">Pengaturan Penajaman</h3>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400">Atur intensitas detail dan filter</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSettings(DEFAULT_SETTINGS)}
-                  className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                  className="text-xs text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
                   title="Kembalikan ke pengaturan awal"
                 >
                   Reset
@@ -547,7 +555,7 @@ export default function ImageSharpenerStudio() {
 
               {/* Preset Selector */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-zinc-300 block">
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300 block">
                   Pilihan Cepat (Presets)
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -563,12 +571,12 @@ export default function ImageSharpenerStudio() {
                         onClick={() => handlePresetSelect(key)}
                         className={`p-2.5 rounded-xl text-left border transition-all ${
                           isActive
-                            ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-sm'
-                            : 'bg-zinc-950/60 hover:bg-zinc-800/80 border-zinc-800 text-zinc-300'
+                            ? 'bg-cyan-50 dark:bg-cyan-500/15 border-cyan-500 text-cyan-800 dark:text-cyan-300 shadow-xs'
+                            : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-950/60 dark:hover:bg-zinc-800/80 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-300'
                         }`}
                       >
                         <div className="text-xs font-bold truncate">{preset.name}</div>
-                        <div className="text-[10px] text-zinc-400 line-clamp-1 mt-0.5">
+                        <div className="text-[10px] text-slate-500 dark:text-zinc-400 line-clamp-1 mt-0.5">
                           {preset.description}
                         </div>
                       </button>
@@ -578,15 +586,15 @@ export default function ImageSharpenerStudio() {
               </div>
 
               {/* Granular Sliders */}
-              <div className="space-y-4 pt-2 border-t border-zinc-800/80">
+              <div className="space-y-4 pt-2 border-t border-slate-200 dark:border-zinc-800/80">
                 {/* 1. Sharpness Amount */}
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="font-semibold text-slate-800 dark:text-zinc-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                       Tingkat Ketajaman (Amount)
                     </span>
-                    <span className="font-mono text-cyan-400 font-bold">{settings.amount}%</span>
+                    <span className="font-mono text-cyan-600 dark:text-cyan-400 font-bold">{settings.amount}%</span>
                   </div>
                   <input
                     type="range"
@@ -601,9 +609,9 @@ export default function ImageSharpenerStudio() {
                         amount: Number(e.target.value),
                       }))
                     }
-                    className="w-full accent-cyan-400 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
+                    className="w-full accent-cyan-500 bg-slate-200 dark:bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
                   />
-                  <div className="flex justify-between text-[10px] text-zinc-500">
+                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-zinc-500">
                     <span>Halus (0%)</span>
                     <span>Seimbang (50%)</span>
                     <span>Maksimal (100%)</span>
@@ -613,8 +621,8 @@ export default function ImageSharpenerStudio() {
                 {/* 2. Edge Radius */}
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-zinc-200">Radius Tepi (Edge Width)</span>
-                    <span className="font-mono text-zinc-300">{settings.radius} px</span>
+                    <span className="font-semibold text-slate-800 dark:text-zinc-200">Radius Tepi (Edge Width)</span>
+                    <span className="font-mono text-slate-700 dark:text-zinc-300">{settings.radius} px</span>
                   </div>
                   <input
                     type="range"
@@ -629,9 +637,9 @@ export default function ImageSharpenerStudio() {
                         radius: Number(e.target.value),
                       }))
                     }
-                    className="w-full accent-cyan-400 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
+                    className="w-full accent-cyan-500 bg-slate-200 dark:bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
                   />
-                  <div className="flex justify-between text-[10px] text-zinc-500">
+                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-zinc-500">
                     <span>1px (Tipis/Detail Halus)</span>
                     <span>4px (Garis Tebal)</span>
                   </div>
@@ -640,10 +648,10 @@ export default function ImageSharpenerStudio() {
                 {/* 3. Noise Threshold */}
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-zinc-200">
+                    <span className="font-semibold text-slate-800 dark:text-zinc-200">
                       Ambang Batas Noise (Threshold)
                     </span>
-                    <span className="font-mono text-zinc-300">{settings.threshold}</span>
+                    <span className="font-mono text-slate-700 dark:text-zinc-300">{settings.threshold}</span>
                   </div>
                   <input
                     type="range"
@@ -658,9 +666,9 @@ export default function ImageSharpenerStudio() {
                         threshold: Number(e.target.value),
                       }))
                     }
-                    className="w-full accent-cyan-400 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
+                    className="w-full accent-cyan-500 bg-slate-200 dark:bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
                   />
-                  <div className="flex justify-between text-[10px] text-zinc-500">
+                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-zinc-500">
                     <span>0 (Semua Piksel)</span>
                     <span>20 (Abaikan Bintik Halus)</span>
                   </div>
@@ -669,11 +677,11 @@ export default function ImageSharpenerStudio() {
                 {/* 4. Clarity (Local Micro-Contrast) */}
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="font-semibold text-slate-800 dark:text-zinc-200 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                       Kejernihan (Clarity / Dehaze)
                     </span>
-                    <span className="font-mono text-blue-400 font-bold">{settings.clarity}%</span>
+                    <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">{settings.clarity}%</span>
                   </div>
                   <input
                     type="range"
@@ -688,9 +696,9 @@ export default function ImageSharpenerStudio() {
                         clarity: Number(e.target.value),
                       }))
                     }
-                    className="w-full accent-blue-400 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
+                    className="w-full accent-blue-500 bg-slate-200 dark:bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
                   />
-                  <div className="flex justify-between text-[10px] text-zinc-500">
+                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-zinc-500">
                     <span>Netral</span>
                     <span>Meningkatkan kontras lokal</span>
                   </div>
@@ -699,9 +707,9 @@ export default function ImageSharpenerStudio() {
                 {/* 5. Contrast & Brightness Tweak */}
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-zinc-300 font-medium">
+                    <div className="flex justify-between items-center text-[11px] text-slate-700 dark:text-zinc-300 font-medium">
                       <span className="flex items-center gap-1">
-                        <Contrast className="w-3 h-3 text-zinc-400" /> Kontras
+                        <Contrast className="w-3 h-3 text-slate-400 dark:text-zinc-400" /> Kontras
                       </span>
                       <span className="font-mono text-xs">{settings.contrast}</span>
                     </div>
@@ -718,14 +726,14 @@ export default function ImageSharpenerStudio() {
                           contrast: Number(e.target.value),
                         }))
                       }
-                      className="w-full accent-zinc-400 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
+                      className="w-full accent-slate-600 dark:accent-zinc-400 bg-slate-200 dark:bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-zinc-300 font-medium">
+                    <div className="flex justify-between items-center text-[11px] text-slate-700 dark:text-zinc-300 font-medium">
                       <span className="flex items-center gap-1">
-                        <SunMedium className="w-3 h-3 text-zinc-400" /> Kecerahan
+                        <SunMedium className="w-3 h-3 text-slate-400 dark:text-zinc-400" /> Kecerahan
                       </span>
                       <span className="font-mono text-xs">{settings.brightness}</span>
                     </div>
@@ -742,15 +750,15 @@ export default function ImageSharpenerStudio() {
                           brightness: Number(e.target.value),
                         }))
                       }
-                      className="w-full accent-zinc-400 bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
+                      className="w-full accent-slate-600 dark:accent-zinc-400 bg-slate-200 dark:bg-zinc-800 h-1.5 rounded-lg cursor-pointer"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Output Format Settings */}
-              <div className="space-y-2 pt-2 border-t border-zinc-800">
-                <label className="text-xs font-semibold text-zinc-300 block">Format Unduhan</label>
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-zinc-800">
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300 block">Format Unduhan</label>
                 <div className="grid grid-cols-4 gap-1.5">
                   {[
                     { id: 'original', label: 'Asli' },
@@ -766,8 +774,8 @@ export default function ImageSharpenerStudio() {
                       }
                       className={`py-2 rounded-lg text-xs font-bold border transition-colors ${
                         settings.format === fmt.id
-                          ? 'bg-cyan-500 text-zinc-950 border-cyan-400 shadow-sm'
-                          : 'bg-zinc-950/80 hover:bg-zinc-800 text-zinc-300 border-zinc-800'
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-950/80 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800'
                       }`}
                     >
                       {fmt.label}
@@ -777,10 +785,10 @@ export default function ImageSharpenerStudio() {
               </div>
 
               {/* Privacy Notice */}
-              <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800/80 text-[11px] text-zinc-400 flex items-start gap-2.5">
-                <ImageIcon className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800/80 text-[11px] text-slate-600 dark:text-zinc-400 flex items-start gap-2.5">
+                <ImageIcon className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong className="text-zinc-200">Privasi Terjaga:</strong> Seluruh filter penajaman dihitung di kartu grafis / prosesor browser perangkat Anda. Foto tidak pernah diunggah ke internet.
+                  <strong className="text-slate-800 dark:text-zinc-200">Privasi Terjaga:</strong> Seluruh filter penajaman dihitung di kartu grafis / prosesor browser perangkat Anda. Foto tidak pernah diunggah ke internet.
                 </span>
               </div>
             </div>
