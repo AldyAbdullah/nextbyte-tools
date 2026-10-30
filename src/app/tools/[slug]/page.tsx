@@ -42,7 +42,9 @@ interface ToolPageProps {
 }
 
 export function generateStaticParams() {
-  return TOOLS_REGISTRY.map((tool) => ({
+  return TOOLS_REGISTRY.filter(
+    (tool) => !['qr-code-generator', 'barcode-generator'].includes(tool.slug)
+  ).map((tool) => ({
     slug: tool.slug,
   }));
 }
