@@ -68,6 +68,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/tools/image-compressor" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  Image Compressor
+                </Link>
+              </li>
+              <li>
                 <Link href="/about" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                   About & Roadmap
                 </Link>

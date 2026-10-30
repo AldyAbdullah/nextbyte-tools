@@ -18,7 +18,8 @@ export function Navbar() {
     { href: '/', label: 'Home' },
     { href: '/tools', label: 'All Tools' },
     { href: '/tools/qr-code-generator', label: 'QR Generator' },
-    { href: '/tools/barcode-generator', label: 'Barcode Generator' },
+    { href: '/tools/barcode-generator', label: 'Barcode' },
+    { href: '/tools/image-compressor', label: 'Image Compressor' },
     { href: '/about', label: 'About' },
   ];
 

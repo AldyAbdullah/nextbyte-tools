@@ -51,12 +51,13 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     id: 'image-compressor',
     name: 'Image Compressor',
     slug: 'image-compressor',
-    description: 'Compress PNG, JPEG, and WebP images directly in your browser with zero server uploads and zero quality loss.',
+    description: 'Compress PNG, JPEG, and WebP images up to 90% lighter with target file size mode (200 KB for documents), WebP conversion, and batch ZIP export.',
     category: 'Media',
-    status: 'coming-soon',
+    status: 'available',
     iconName: 'Minimize2',
     featured: true,
-    tags: ['image', 'compress', 'optimize', 'media']
+    badge: 'Populer',
+    tags: ['image', 'compress', 'optimize', 'media', 'photo', 'webp', 'jpg', 'png']
   },
   {
     id: 'image-converter',

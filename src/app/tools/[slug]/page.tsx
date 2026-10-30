@@ -43,7 +43,7 @@ interface ToolPageProps {
 
 export function generateStaticParams() {
   return TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator'].includes(tool.slug)
+    (tool) => !['qr-code-generator', 'barcode-generator', 'image-compressor'].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
   }));
@@ -70,6 +70,9 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   }
   if (slug === 'barcode-generator') {
     redirect('/tools/barcode-generator');
+  }
+  if (slug === 'image-compressor') {
+    redirect('/tools/image-compressor');
   }
 
   const tool = TOOLS_REGISTRY.find((t) => t.slug === slug);
