@@ -60,6 +60,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['image', 'compress', 'optimize', 'media', 'photo', 'webp', 'jpg', 'png']
   },
   {
+    id: 'image-sharpener',
+    name: 'Image Sharpener & Enhancer',
+    slug: 'image-sharpener',
+    description: 'Pertajam foto buram, tingkatkan kejernihan teks dokumen KTP/struk, dan perjelas detail gambar dengan Unsharp Mask & mikro-kontras langsung di browser.',
+    category: 'Media',
+    status: 'available',
+    iconName: 'Sparkles',
+    featured: true,
+    badge: 'Baru',
+    tags: ['image', 'sharpener', 'enhance', 'photo', 'clarity', 'unsharp-mask', 'ktp', 'dokumen']
+  },
+  {
     id: 'image-converter',
     name: 'Image Format Converter',
     slug: 'image-converter',

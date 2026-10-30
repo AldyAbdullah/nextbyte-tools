@@ -18,12 +18,14 @@ import {
   Binary, 
   Type, 
   AlignLeft,
-  Barcode 
+  Barcode,
+  Sparkles 
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   QrCode,
   Barcode,
+  Sparkles,
   KeyRound,
   FileCode2,
   Minimize2,
@@ -43,7 +45,7 @@ interface ToolPageProps {
 
 export function generateStaticParams() {
   return TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'image-compressor'].includes(tool.slug)
+    (tool) => !['qr-code-generator', 'barcode-generator', 'image-compressor', 'image-sharpener'].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
   }));
@@ -73,6 +75,9 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   }
   if (slug === 'image-compressor') {
     redirect('/tools/image-compressor');
+  }
+  if (slug === 'image-sharpener') {
+    redirect('/tools/image-sharpener');
   }
 
   const tool = TOOLS_REGISTRY.find((t) => t.slug === slug);

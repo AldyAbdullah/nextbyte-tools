@@ -21,7 +21,8 @@ import {
   AlignLeft,
   ChevronRight,
   Layers,
-  Barcode
+  Barcode,
+  Sparkles
 } from 'lucide-react';
 import { TOOLS_REGISTRY, TOOL_CATEGORIES } from '@/config/tools';
 import { ToolCategory } from '@/types/tools';
@@ -29,6 +30,7 @@ import { ToolCategory } from '@/types/tools';
 const ICON_MAP: Record<string, React.ElementType> = {
   QrCode,
   Barcode,
+  Sparkles,
   KeyRound,
   FileCode2,
   Minimize2,
