@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
-import { Layers, ShieldCheck, Zap, Globe } from 'lucide-react';
+import Image from 'next/image';
+import { ShieldCheck, Zap, Globe } from 'lucide-react';
 
 export function Footer() {
   return (
@@ -11,8 +12,14 @@ export function Footer() {
           {/* Brand & Mission */}
           <div className="md:col-span-2 space-y-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
-                <Layers className="w-4 h-4" />
+              <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-slate-900 border border-slate-800 shrink-0">
+                <Image
+                  src="/logo-icon.png"
+                  alt="NextByte Logo"
+                  width={32}
+                  height={32}
+                  className="w-full h-full object-cover"
+                />
               </div>
               <span className="font-bold text-lg text-slate-900 dark:text-white">
                 NextByte <span className="text-blue-600 dark:text-blue-400">Tools</span>
@@ -53,6 +60,11 @@ export function Footer() {
               <li>
                 <Link href="/tools/qr-code-generator" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                   QR Code Generator
+                </Link>
+              </li>
+              <li>
+                <Link href="/tools/barcode-generator" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  Barcode Generator
                 </Link>
               </li>
               <li>

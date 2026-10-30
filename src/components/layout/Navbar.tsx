@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { Search, Sun, Moon, Laptop, Menu, X, Layers } from 'lucide-react';
+import { Search, Sun, Moon, Laptop, Menu, X } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { SearchModal } from '@/components/common/SearchModal';
 
@@ -28,8 +29,15 @@ export function Navbar() {
           
           {/* Logo & Platform Name */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-              <Layers className="w-5 h-5" />
+            <div className="relative w-9 h-9 rounded-xl overflow-hidden shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform flex items-center justify-center bg-slate-900 border border-slate-800 shrink-0">
+              <Image
+                src="/logo-icon.png"
+                alt="NextByte Logo"
+                width={36}
+                height={36}
+                priority
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-lg tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">

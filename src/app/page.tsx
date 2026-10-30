@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { 
   Search, 
-  Sparkles, 
   ArrowRight, 
   ShieldCheck, 
   Zap, 
@@ -67,8 +67,8 @@ export default function HomePage() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500/10 dark:bg-blue-500/15 blur-3xl rounded-full pointer-events-none -z-10" />
 
         {/* Top Mini Pill */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-semibold mb-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
-          <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+        <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-semibold mb-6 animate-in fade-in slide-in-from-bottom-3 duration-500 shadow-sm">
+          <Image src="/logo-icon.png" alt="NextByte" width={18} height={18} className="rounded-md" />
           <span>NextByte Multi Tools Platform • Modern & Privacy-First</span>
         </div>
 

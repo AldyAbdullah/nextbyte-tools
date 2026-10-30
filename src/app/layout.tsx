@@ -41,11 +41,28 @@ export const metadata: Metadata = {
   alternates: {
     canonical: 'https://www.nextbyte.biz.id',
   },
+  icons: {
+    icon: [
+      { url: '/icon.png', sizes: '32x32', type: 'image/png' },
+      { url: '/logo-icon.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/apple-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
   openGraph: {
     title: 'NextByte Tools - Platform Alat Digital & QR Code Generator Terlengkap',
     description: 'Buat QR Code kustom logo dan generate massal (bulk) dari file Excel dengan cepat dan gratis langsung di browser Anda.',
     url: 'https://www.nextbyte.biz.id',
     siteName: 'NextByte Tools',
+    images: [
+      {
+        url: '/logo-icon.png',
+        width: 512,
+        height: 512,
+        alt: 'NextByte Tools Logo',
+      },
+    ],
     locale: 'id_ID',
     type: 'website',
   },
@@ -53,6 +70,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'NextByte Tools - QR Code Generator Kustom & Bulk Excel',
     description: 'Platform alat digital modern dengan fitur generate QR Code massal dari Excel 100% client-side & gratis.',
+    images: ['/logo-icon.png'],
   },
   robots: {
     index: true,
