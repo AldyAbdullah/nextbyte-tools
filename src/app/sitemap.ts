@@ -20,6 +20,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     {
+      url: `${baseUrl}/tools/barcode-generator`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
       url: `${baseUrl}/tools`,
       lastModified: currentDate,
       changeFrequency: 'weekly',
@@ -35,7 +41,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   // Halaman Alat Lainnya
   const toolPages: MetadataRoute.Sitemap = TOOLS_REGISTRY.filter(
-    (tool) => tool.slug !== 'qr-code-generator'
+    (tool) => !['qr-code-generator', 'barcode-generator'].includes(tool.slug)
   ).map((tool) => ({
     url: `${baseUrl}/tools/${tool.slug}`,
     lastModified: currentDate,

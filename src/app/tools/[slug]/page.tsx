@@ -17,11 +17,13 @@ import {
   Link2, 
   Binary, 
   Type, 
-  AlignLeft 
+  AlignLeft,
+  Barcode 
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   QrCode,
+  Barcode,
   KeyRound,
   FileCode2,
   Minimize2,
@@ -60,9 +62,12 @@ export async function generateMetadata({ params }: ToolPageProps): Promise<Metad
 export default async function DynamicToolPage({ params }: ToolPageProps) {
   const { slug } = await params;
 
-  // Redirect ke halaman QR Code Generator jika slug cocok
+  // Redirect ke halaman khusus tool yang tersedia
   if (slug === 'qr-code-generator') {
     redirect('/tools/qr-code-generator');
+  }
+  if (slug === 'barcode-generator') {
+    redirect('/tools/barcode-generator');
   }
 
   const tool = TOOLS_REGISTRY.find((t) => t.slug === slug);

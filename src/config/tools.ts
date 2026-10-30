@@ -14,6 +14,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['qr', 'generator', 'wifi', 'whatsapp', 'barcode', 'design', 'custom']
   },
   {
+    id: 'barcode-generator',
+    name: 'Barcode Generator',
+    slug: 'barcode-generator',
+    description: 'Generate standard industry barcodes (Code 128, EAN-13, UPC, Code 39, ITF-14) in high-resolution PNG, SVG vector, and JPG.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Barcode',
+    featured: true,
+    badge: 'Baru',
+    tags: ['barcode', 'code128', 'ean13', 'upc', 'code39', 'retail', 'inventory', 'sku']
+  },
+  {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',
