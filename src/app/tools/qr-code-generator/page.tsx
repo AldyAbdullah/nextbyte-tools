@@ -5,13 +5,62 @@ import { QrCodePageClient } from '@/components/qrcode/QrCodePageClient';
 import { QrCode, ChevronRight, ShieldCheck, Sparkles, Layers } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'QR Code Generator (Single & Bulk Excel) - NextByte Tools',
-  description: 'Buat QR Code kustom profesional secara individu maupun massal (bulk) via file Excel dengan pilihan bentuk dots, logo tengah, frame Scan Me, dan export ZIP / PDF HD.',
+  title: 'QR Code Generator Gratis & Massal (Bulk via Excel) dengan Logo HD',
+  description: 'Buat QR Code kustom profesional satuan maupun massal (bulk) menggunakan file Excel (.xlsx, .csv). Lengkap dengan custom logo, frame Scan Me, pemetaan kolom fleksibel, export ZIP & PDF cetak A4 100% gratis.',
+  keywords: [
+    'qr code generator',
+    'qr code massal excel',
+    'bulk qr code generator',
+    'generate qr code dari excel',
+    'qr code dengan logo',
+    'qr code frame scan me',
+    'buat qr code gratis',
+    'cetak qr code pdf a4',
+    'qr code generator indonesia',
+  ],
+  alternates: {
+    canonical: 'https://www.nextbyte.biz.id/tools/qr-code-generator',
+  },
+  openGraph: {
+    title: 'QR Code Generator Gratis & Massal Excel (Bulk) - NextByte Tools',
+    description: 'Buat QR Code dengan logo kustom dan generate ratusan QR Code sekaligus dari Excel dengan mudah dan cepat.',
+    url: 'https://www.nextbyte.biz.id/tools/qr-code-generator',
+    type: 'website',
+  },
+};
+
+// Structured Data (JSON-LD) untuk Google Search
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'NextByte QR Code Generator',
+  url: 'https://www.nextbyte.biz.id/tools/qr-code-generator',
+  applicationCategory: 'UtilityApplication',
+  operatingSystem: 'All',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'IDR',
+  },
+  featureList: [
+    'Single QR Code Generator dengan Logo',
+    'Bulk QR Code Generator dari Excel (.xlsx, .csv)',
+    'Pemetaan Kolom Fleksibel (Single, Multi-Column, Custom Template)',
+    'Export Kualitas HD (1200px) PNG, JPG, SVG',
+    'Export Massal ZIP & Print-Ready PDF Grid A4',
+    '100% Client-Side & Aman (Tanpa Pengiriman Data ke Server)',
+  ],
+  description: 'Aplikasi pembuat QR Code kustom satuan dan massal berbasis file Excel dengan fitur logo resolusi tinggi dan download ZIP gratis.',
 };
 
 export default function QrCodeGeneratorPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
+      {/* JSON-LD Schema Script */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       
       {/* Breadcrumb & Header Title */}
       <div className="space-y-3">

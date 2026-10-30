@@ -17,9 +17,54 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'NextByte Tools - All Your Everyday Tools in One Place',
-  description: 'Platform multi-tools modern dan profesional. Buat QR Code kustom lengkap dengan logo, bingkai, warna, dan resolusi tinggi langsung di browser Anda.',
-  keywords: ['qr code generator', 'multi tools', 'online utilities', 'nextbyte', 'free web tools'],
+  metadataBase: new URL('https://www.nextbyte.biz.id'),
+  title: {
+    default: 'NextByte Tools - Platform Alat Digital & QR Code Generator Terlengkap',
+    template: '%s | NextByte Tools',
+  },
+  description: 'Platform multi-tools modern, cepat, dan 100% aman langsung di browser. Buat QR Code kustom lengkap dengan logo, warna, scan frame, serta fitur Bulk QR Code via Excel gratis.',
+  keywords: [
+    'nextbyte',
+    'nextbyte tools',
+    'qr code generator indonesia',
+    'buat qr code gratis',
+    'qr code massal excel',
+    'bulk qr code generator',
+    'qr code logo',
+    'qr generator online',
+    'alat digital online',
+    'free web utilities',
+  ],
+  authors: [{ name: 'NextByte Team', url: 'https://www.nextbyte.biz.id' }],
+  creator: 'NextByte',
+  publisher: 'NextByte',
+  alternates: {
+    canonical: 'https://www.nextbyte.biz.id',
+  },
+  openGraph: {
+    title: 'NextByte Tools - Platform Alat Digital & QR Code Generator Terlengkap',
+    description: 'Buat QR Code kustom logo dan generate massal (bulk) dari file Excel dengan cepat dan gratis langsung di browser Anda.',
+    url: 'https://www.nextbyte.biz.id',
+    siteName: 'NextByte Tools',
+    locale: 'id_ID',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'NextByte Tools - QR Code Generator Kustom & Bulk Excel',
+    description: 'Platform alat digital modern dengan fitur generate QR Code massal dari Excel 100% client-side & gratis.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
 };
 
 export default function RootLayout({
