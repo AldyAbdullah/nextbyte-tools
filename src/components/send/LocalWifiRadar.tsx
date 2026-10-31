@@ -12,26 +12,29 @@ import {
   Radio,
   KeyRound,
   ArrowRight,
+  Camera,
 } from 'lucide-react';
 import { LocalPeer } from '@/types/nextbyteSend';
 
 interface LocalWifiRadarProps {
   myPeer: LocalPeer | null;
   peers: LocalPeer[];
-  roomPin: string;
-  activeRoom: string | null;
+  myPin: string;
+  connectedPin: string | null;
   onSelectPeer: (peer: LocalPeer) => void;
   onShowQr: () => void;
+  onOpenScanner: () => void;
   onJoinPin: (pin: string) => void;
 }
 
 export function LocalWifiRadar({
   myPeer,
   peers,
-  roomPin,
-  activeRoom,
+  myPin,
+  connectedPin,
   onSelectPeer,
   onShowQr,
+  onOpenScanner,
   onJoinPin,
 }: LocalWifiRadarProps) {
   const [pinInput, setPinInput] = useState('');
@@ -66,7 +69,9 @@ export function LocalWifiRadar({
           <div className="min-w-0">
             <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span className="truncate">Perangkat Anda {activeRoom ? `(Grup: ${activeRoom})` : '(Hotspot / Wi-Fi)'}</span>
+              <span className="truncate">
+                Perangkat Anda {connectedPin ? `(Terhubung ke: ${connectedPin})` : '(Hotspot / Wi-Fi)'}
+              </span>
             </div>
             <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
               {myPeer?.name || 'Mendeteksi perangkat...'}
@@ -74,18 +79,33 @@ export function LocalWifiRadar({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Pairing Actions: PIN Badge + Scan Camera + Show QR */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-            PIN: <span className="text-blue-600 dark:text-blue-400 text-sm tracking-wider">{roomPin}</span>
+            <span className="text-slate-400 font-sans font-medium text-[11px]">PIN Anda:</span>
+            <span className="text-blue-600 dark:text-blue-400 text-sm tracking-wider">{myPin}</span>
           </div>
 
+          {/* Button to open in-browser Camera Scanner (ideal for mobile) */}
+          <button
+            onClick={onOpenScanner}
+            type="button"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all shrink-0"
+            title="Buka kamera HP untuk scan QR Code di laptop"
+          >
+            <Camera className="w-3.5 h-3.5 shrink-0" />
+            <span>Scan Kamera</span>
+          </button>
+
+          {/* Button to show this device's QR code (ideal for laptop) */}
           <button
             onClick={onShowQr}
             type="button"
-            className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-700 transition-all shrink-0"
+            title="Tampilkan QR Code perangkat ini agar bisa discan dari HP"
           >
-            <QrCode className="w-4 h-4 shrink-0" />
-            <span>Scan QR</span>
+            <QrCode className="w-3.5 h-3.5 shrink-0" />
+            <span>Tampilkan QR</span>
           </button>
         </div>
       </div>
@@ -147,33 +167,46 @@ export function LocalWifiRadar({
 
             <div className="space-y-2">
               <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
-                Mencari Perangkat di Jaringan Hotspot / Wi-Fi...
+                Hubungkan dengan Perangkat Lain
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                Scan QR Code di bawah dengan kamera HP Anda, atau masukkan PIN untuk menghubungkan seketika.
+                Scan QR Code di layar perangkat lain menggunakan kamera HP, atau masukkan 4-digit PIN perangkat tujuan.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+            {/* Quick Action Buttons: Scan Camera (Mobile) or Show QR (Laptop) */}
+            <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+              <button
+                onClick={onOpenScanner}
+                type="button"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all"
+              >
+                <Camera className="w-4 h-4" />
+                Buka Kamera Scan
+              </button>
+
               <button
                 onClick={onShowQr}
                 type="button"
-                className="inline-flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs sm:text-sm border border-slate-200 dark:border-slate-700 transition-all"
               >
                 <QrCode className="w-4 h-4" />
-                Scan QR dari HP
+                Tampilkan QR Perangkat Ini
               </button>
             </div>
 
-            {/* Quick PIN Input for Mobile or Laptop */}
-            <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
+            {/* Quick PIN Input to Connect to Target Device */}
+            <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60 space-y-2">
+              <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Atau Hubungkan Menggunakan PIN
+              </div>
               <form onSubmit={handlePinSubmit} className="flex items-center justify-center gap-2 max-w-xs mx-auto">
                 <div className="relative flex-1">
                   <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     maxLength={6}
-                    placeholder="Masukkan PIN 4-Digit"
+                    placeholder="Ketik PIN Perangkat Tujuan"
                     value={pinInput}
                     onChange={(e) => setPinInput(e.target.value)}
                     className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono uppercase text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -187,8 +220,8 @@ export function LocalWifiRadar({
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </form>
-              <div className="text-[11px] text-slate-400 mt-2">
-                PIN Anda saat ini: <strong className="font-mono text-blue-600 dark:text-blue-400">{roomPin}</strong>
+              <div className="text-[11px] text-slate-400">
+                PIN perangkat ini: <strong className="font-mono text-blue-600 dark:text-blue-400">{myPin}</strong> (berikan kode ini jika perangkat lain ingin menghubungkan ke Anda)
               </div>
             </div>
           </div>

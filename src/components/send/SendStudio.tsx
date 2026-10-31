@@ -25,6 +25,7 @@ import {
 import { LocalWifiRadar } from './LocalWifiRadar';
 import { IncomingTransferModal } from './IncomingTransferModal';
 import { TransferProgressCard } from './TransferProgressCard';
+import { CameraScannerModal } from './CameraScannerModal';
 import { createFileReceiverHandle, FileReceiverHandle } from '@/lib/webrtc/streamingStorage';
 import { useToast } from '@/components/common/Toast';
 
@@ -34,11 +35,13 @@ export function SendStudio() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrContainerRef = useRef<HTMLDivElement>(null);
 
-  // Room / PIN pairing: 4-digit PIN for this device, or joined PIN from URL
-  const [roomPin, setRoomPin] = useState<string>(() =>
+  // 4-digit PIN belonging strictly to THIS device (never overwritten by another device's PIN)
+  const [myPin, setMyPin] = useState<string>(() =>
     Math.floor(1000 + Math.random() * 9000).toString()
   );
-  const [activeRoom, setActiveRoom] = useState<string | null>(null);
+
+  // Target PIN if this device is connecting to another device (e.g. from URL ?pin= or scanner)
+  const [connectedPin, setConnectedPin] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Local Peer identification
@@ -46,6 +49,7 @@ export function SendStudio() {
   const myPeerRef = useRef<LocalPeer | null>(null);
   const [nearbyPeers, setNearbyPeers] = useState<LocalPeer[]>([]);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [showCameraScanner, setShowCameraScanner] = useState<boolean>(false);
 
   // Transfer states
   const [targetPeer, setTargetPeer] = useState<LocalPeer | null>(null);
@@ -93,7 +97,7 @@ export function SendStudio() {
   useEffect(() => {
     const urlPin = searchParams.get('pin') || searchParams.get('room');
     if (urlPin) {
-      setActiveRoom(urlPin.toUpperCase());
+      setConnectedPin(urlPin.toUpperCase());
     }
   }, [searchParams]);
 
@@ -338,13 +342,8 @@ export function SendStudio() {
         const { Peer } = await import('peerjs');
         if (!isMounted) return;
 
-        // Determine our Peer ID:
-        // If user is joining another room PIN: use random client ID
-        // If user is host: use `nb_${roomPin}`
-        const targetPin = activeRoom;
-        const myPeerId = targetPin
-          ? `nb_client_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
-          : `nb_${roomPin}`;
+        // Peer ID is always tied to this device's own PIN
+        const myPeerId = `nb_${myPin}`;
 
         const peer = new Peer(myPeerId, {
           debug: 1,
@@ -379,9 +378,9 @@ export function SendStudio() {
           if (!isMounted) return;
           console.log('[PeerJS] Ready with ID:', id);
 
-          // If joining a target room PIN from QR or input, connect immediately
-          if (targetPin) {
-            connectToPeer(`nb_${targetPin}`);
+          // If URL had a target PIN (from QR scan), connect immediately
+          if (connectedPin) {
+            connectToPeer(`nb_${connectedPin}`);
           }
         });
 
@@ -394,10 +393,10 @@ export function SendStudio() {
           if (!isMounted) return;
           console.warn('[PeerJS] Error:', err);
 
-          // If ID collision happened on host, regenerate PIN and try again
+          // If ID collision happened, regenerate our PIN and try again
           if (err.type === 'unavailable-id') {
             const nextPin = Math.floor(1000 + Math.random() * 9000).toString();
-            setRoomPin(nextPin);
+            setMyPin(nextPin);
           }
         });
       } catch (err) {
@@ -414,7 +413,7 @@ export function SendStudio() {
         peerInstanceRef.current = null;
       }
     };
-  }, [roomPin, activeRoom, connectToPeer, setupConnection]);
+  }, [myPin, connectedPin, connectToPeer, setupConnection]);
 
   // Sender: Stream files chunk-by-chunk to receiver
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -657,14 +656,24 @@ export function SendStudio() {
     setFilesToSend([]);
   };
 
+  // User entered target PIN manually
   const handleJoinPin = (pin: string) => {
-    setActiveRoom(pin);
+    setConnectedPin(pin);
     connectToPeer(`nb_${pin}`);
     showToast(`Menghubungkan ke PIN: ${pin}`, 'info');
   };
 
+  // User scanned QR code with in-browser camera
+  const handleCameraScanSuccess = (scannedPin: string) => {
+    setShowCameraScanner(false);
+    setConnectedPin(scannedPin);
+    connectToPeer(`nb_${scannedPin}`);
+    showToast(`QR Code Terdeteksi! Menghubungkan ke PIN: ${scannedPin}`, 'success');
+  };
+
+  // Tautan pairing selalu mengacu ke PIN milik perangkat INI
   const pairUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/send?pin=${activeRoom || roomPin}`
+    ? `${window.location.origin}/send?pin=${myPin}`
     : '';
 
   const handleCopyPairLink = () => {
@@ -676,7 +685,7 @@ export function SendStudio() {
     }
   };
 
-  // Render QR Code in modal pointing directly to active pairing PIN
+  // Render QR Code in modal pointing directly to THIS device's PIN
   useEffect(() => {
     if (!showQrModal || !qrContainerRef.current || !pairUrl) return;
 
@@ -738,15 +747,24 @@ export function SendStudio() {
         />
       )}
 
+      {/* Camera Scanner Modal (for scanning QR from screen) */}
+      {showCameraScanner && (
+        <CameraScannerModal
+          onScan={handleCameraScanSuccess}
+          onClose={() => setShowCameraScanner(false)}
+        />
+      )}
+
       {/* 1. STATE: RADAR (IDLE) */}
       {status === 'idle' && (
         <LocalWifiRadar
           myPeer={myPeer}
           peers={nearbyPeers}
-          roomPin={activeRoom || roomPin}
-          activeRoom={activeRoom}
+          myPin={myPin}
+          connectedPin={connectedPin}
           onSelectPeer={handleSelectPeerToTarget}
           onShowQr={() => setShowQrModal(true)}
+          onOpenScanner={() => setShowCameraScanner(true)}
           onJoinPin={handleJoinPin}
         />
       )}
@@ -876,13 +894,13 @@ export function SendStudio() {
         </div>
       )}
 
-      {/* QR Code Modal for Phone Pairing */}
+      {/* QR Code Modal for Showing THIS device's QR code */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95 max-w-full overflow-hidden">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider truncate">
-                Hubungkan Ponsel (Hotspot / Wi-Fi)
+                QR Code Perangkat Ini
               </span>
               <button
                 onClick={() => setShowQrModal(false)}
@@ -895,10 +913,10 @@ export function SendStudio() {
 
             <div className="space-y-1">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Scan dengan Kamera HP
+                Scan dari Kamera HP
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Arahkan kamera HP Anda ke QR Code di bawah untuk menghubungkan langsung:
+                Buka kamera HP Anda atau klik <strong>Scan Kamera</strong> di HP untuk memindai kode ini:
               </p>
             </div>
 
@@ -908,9 +926,9 @@ export function SendStudio() {
             </div>
 
             <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs space-y-1">
-              <div className="text-slate-500 dark:text-slate-400">Atau ketik PIN 4-digit di HP:</div>
+              <div className="text-slate-500 dark:text-slate-400">Atau ketik PIN perangkat ini di HP:</div>
               <div className="text-xl font-bold font-mono tracking-widest text-blue-600 dark:text-blue-400">
-                {activeRoom || roomPin}
+                {myPin}
               </div>
             </div>
 
