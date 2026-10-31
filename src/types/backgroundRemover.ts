@@ -5,6 +5,7 @@ export type RemovalStatus = 'idle' | 'loading-model' | 'processing' | 'done' | '
 export interface ProcessProgress {
   stage: string;
   percent: number;
+  details?: string;
 }
 
 export interface ProcessedImageResult {

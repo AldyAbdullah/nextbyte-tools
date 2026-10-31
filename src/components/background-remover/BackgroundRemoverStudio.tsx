@@ -297,6 +297,11 @@ export function BackgroundRemoverStudio() {
               AI Sedang Menghapus Background...
             </h3>
             <p className="text-xs text-slate-500 font-mono">{progress.stage}</p>
+            {progress.details && (
+              <div className="inline-block px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-mono font-bold border border-blue-200 dark:border-blue-900">
+                {progress.details}
+              </div>
+            )}
           </div>
 
           {/* Progress Bar */}
@@ -308,7 +313,7 @@ export function BackgroundRemoverStudio() {
               />
             </div>
             <div className="flex justify-between text-[11px] text-slate-400 font-medium">
-              <span>Proses WebAssembly Lokal</span>
+              <span>{progress.details ? 'Mengunduh bobot AI...' : 'Proses WebAssembly Lokal'}</span>
               <span className="font-mono">{progress.percent}%</span>
             </div>
           </div>

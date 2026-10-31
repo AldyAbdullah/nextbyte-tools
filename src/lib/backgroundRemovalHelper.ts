@@ -23,11 +23,12 @@ export function getImageDimensions(fileOrBlob: File | Blob): Promise<{ width: nu
 }
 
 /**
- * Downscale image if it exceeds max dimension (e.g. 2560px) to prevent browser/RAM crashes on mobile
+ * Downscale image if it exceeds max dimension (e.g. 1920px) to prevent browser/RAM crashes on mobile
+ * and ensure blazing-fast inference speeds.
  */
 async function optimizeImageForProcessing(
   fileOrBlob: File | Blob,
-  maxDimension: number = 2560
+  maxDimension: number = 1920
 ): Promise<Blob> {
   const { width, height } = await getImageDimensions(fileOrBlob);
   if (width <= maxDimension && height <= maxDimension) {
@@ -71,7 +72,7 @@ async function optimizeImageForProcessing(
 }
 
 /**
- * Remove image background locally in browser using @imgly/background-removal (ISNet model)
+ * Remove image background locally in browser using @imgly/background-removal (Quantized ISNet model)
  */
 export async function removeImageBackground(
   imageSource: File | Blob,
@@ -79,36 +80,58 @@ export async function removeImageBackground(
 ): Promise<Blob> {
   // 1. Optimize input size if image is extraordinarily large
   onProgress?.({ stage: 'Menyiapkan gambar...', percent: 5 });
-  const optimizedBlob = await optimizeImageForProcessing(imageSource, 2560);
+  const optimizedBlob = await optimizeImageForProcessing(imageSource, 1920);
 
   // 2. Dynamically import library to prevent SSR conflicts
-  onProgress?.({ stage: 'Memuat modul AI WebAssembly...', percent: 15 });
+  onProgress?.({ stage: 'Inisialisasi modul AI...', percent: 10 });
   const { removeBackground } = await import('@imgly/background-removal');
 
-  // 3. Track progress smoothly
-  let currentEstimatedPercent = 20;
-
+  // 3. Track progress with accurate real-time megabytes & percentage
   const handleLibProgress = (key: string, current: number, total: number) => {
     let stage = 'Memproses pemisahan background...';
-    const progressRatio = total > 0 ? current / total : 0;
+    let percent = 20;
+    let details: string | undefined = undefined;
 
-    if (key.includes('fetch:wasm') || key.includes('fetch:model')) {
-      stage = 'Mengunduh Model AI ISNet (~25MB)...';
-      currentEstimatedPercent = Math.min(20 + Math.round(progressRatio * 40), 60);
-    } else if (key.includes('compute') || key.includes('inference')) {
-      stage = 'Menganalisis objek, tepian, dan rambut dengan AI...';
-      currentEstimatedPercent = Math.min(60 + Math.round(progressRatio * 30), 90);
-    } else if (key.includes('encode')) {
-      stage = 'Menyusun hasil transparansi PNG...';
-      currentEstimatedPercent = 95;
+    if (key.startsWith('fetch:')) {
+      const resourceName = key.replace('fetch:', '');
+      const currentMb = (current / (1024 * 1024)).toFixed(1);
+      const totalMb = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
+      const ratio = total > 0 ? current / total : 0;
+
+      if (resourceName.includes('wasm') || resourceName.includes('onnxruntime')) {
+        stage = 'Mengunduh Mesin WebAssembly AI...';
+        percent = Math.min(10 + Math.round(ratio * 20), 30);
+        details = `${currentMb} MB / ${totalMb} MB`;
+      } else if (resourceName.includes('model') || resourceName.includes('isnet')) {
+        stage = 'Mengunduh Model AI ISNet (~44 MB)...';
+        percent = Math.min(30 + Math.round(ratio * 45), 75);
+        details = `${currentMb} MB / ${totalMb} MB`;
+      } else {
+        stage = 'Memuat modul AI...';
+        percent = Math.min(10 + Math.round(ratio * 60), 70);
+        details = `${currentMb} MB / ${totalMb} MB`;
+      }
+    } else if (key === 'compute:decode') {
+      stage = 'Mendekode gambar...';
+      percent = 78;
+    } else if (key === 'compute:inference') {
+      stage = 'AI sedang membedakan objek & rambut...';
+      percent = 85;
+    } else if (key === 'compute:mask') {
+      stage = 'Menyusun mask transparansi halus...';
+      percent = 92;
+    } else if (key.startsWith('compute:encode')) {
+      stage = 'Mengekspor PNG transparan...';
+      percent = 97;
     }
 
-    onProgress?.({ stage, percent: currentEstimatedPercent });
+    onProgress?.({ stage, percent, details });
   };
 
   try {
+    // We use isnet_quint8 (44.3 MB instead of 88.1 MB) for 2x faster loading and 50% less RAM
     const resultBlob = await removeBackground(optimizedBlob, {
-      model: 'isnet_fp16',
+      model: 'isnet_quint8',
       device: 'gpu',
       proxyToWorker: true,
       progress: handleLibProgress,
@@ -121,24 +144,20 @@ export async function removeImageBackground(
     onProgress?.({ stage: 'Selesai!', percent: 100 });
     return resultBlob;
   } catch (err: unknown) {
-    console.error('Background removal failed:', err);
-    // If WebGPU failed, fallback to CPU
-    const errorMessage = err instanceof Error ? err.message : '';
-    if (errorMessage.includes('gpu') || errorMessage.includes('WebGPU')) {
-      onProgress?.({ stage: 'WebGPU gagal, beralih ke CPU fallback...', percent: 30 });
-      const fallbackBlob = await removeBackground(optimizedBlob, {
-        model: 'isnet_quint8',
-        device: 'cpu',
-        proxyToWorker: true,
-        progress: handleLibProgress,
-        output: {
-          format: 'image/png',
-        },
-      });
-      onProgress?.({ stage: 'Selesai!', percent: 100 });
-      return fallbackBlob;
-    }
-    throw err;
+    console.warn('Initial inference attempt notice, evaluating fallback:', err);
+    // If WebGPU failed or threw, fallback cleanly to CPU
+    onProgress?.({ stage: 'Memproses dengan mesin CPU WebAssembly...', percent: 40 });
+    const fallbackBlob = await removeBackground(optimizedBlob, {
+      model: 'isnet_quint8',
+      device: 'cpu',
+      proxyToWorker: true,
+      progress: handleLibProgress,
+      output: {
+        format: 'image/png',
+      },
+    });
+    onProgress?.({ stage: 'Selesai!', percent: 100 });
+    return fallbackBlob;
   }
 }
 
