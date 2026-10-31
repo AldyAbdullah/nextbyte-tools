@@ -14,7 +14,7 @@ export interface SignalingSession {
 export function createSignalingSession(
   roomId: string,
   role: 'sender' | 'receiver',
-  onMessage: (msg: SignalingMessage) => void
+  onMessage: (msg: SignalingMessage) => Promise<void> | void
 ): SignalingSession {
   let isClosed = false;
 
@@ -28,9 +28,9 @@ export function createSignalingSession(
     });
 
     channel
-      .on('broadcast', { event: 'signal' }, (payload) => {
+      .on('broadcast', { event: 'signal' }, async (payload) => {
         if (!isClosed && payload.payload) {
-          onMessage(payload.payload as SignalingMessage);
+          await onMessage(payload.payload as SignalingMessage);
         }
       })
       .subscribe((status) => {
@@ -60,11 +60,13 @@ export function createSignalingSession(
   // 2. LOCAL API FALLBACK MODE
   let lastTimestamp = 0;
   let pollInterval: NodeJS.Timeout | null = null;
+  let isPolling = false;
 
   const targetRole = role === 'sender' ? 'receiver' : 'sender';
 
   const pollMessages = async () => {
-    if (isClosed) return;
+    if (isClosed || isPolling) return;
+    isPolling = true;
     try {
       const res = await fetch(
         `/api/send/signal?roomId=${encodeURIComponent(roomId)}&role=${role}&since=${lastTimestamp}`
@@ -72,19 +74,21 @@ export function createSignalingSession(
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.messages) && data.messages.length > 0) {
-          lastTimestamp = data.latestTimestamp || Date.now();
+          lastTimestamp = data.latestTimestamp || lastTimestamp;
           for (const msg of data.messages) {
-            onMessage(msg);
+            await onMessage(msg);
           }
         }
       }
     } catch {
       // transient network glitch
+    } finally {
+      isPolling = false;
     }
   };
 
-  // Poll every 600ms
-  pollInterval = setInterval(pollMessages, 600);
+  // Poll every 300ms for responsive WebRTC signaling
+  pollInterval = setInterval(pollMessages, 300);
   pollMessages(); // Immediate initial poll
 
   return {

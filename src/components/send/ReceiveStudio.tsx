@@ -105,7 +105,9 @@ export function ReceiveStudio() {
         const pc = new RTCPeerConnection({ iceServers });
         peerConnectionRef.current = pc;
 
-        // 3. Connect to signaling session
+        // 3. Connect to signaling session & Candidate Queue
+        const iceCandidateQueue: RTCIceCandidateInit[] = [];
+
         const signaling = createSignalingSession(code, 'receiver', async (msg) => {
           if (msg.type === 'file-list') {
             setSenderDevice(msg.deviceInfo || null);
@@ -121,6 +123,16 @@ export function ReceiveStudio() {
           } else if (msg.type === 'offer') {
             if (msg.sdp) {
               await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+              while (iceCandidateQueue.length > 0) {
+                const cand = iceCandidateQueue.shift();
+                if (cand) {
+                  try {
+                    await pc.addIceCandidate(new RTCIceCandidate(cand));
+                  } catch (e) {
+                    console.warn('[Receiver] Queued candidate warning:', e);
+                  }
+                }
+              }
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
 
@@ -132,7 +144,15 @@ export function ReceiveStudio() {
             }
           } else if (msg.type === 'ice-candidate') {
             if (msg.candidate) {
-              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+              if (pc.remoteDescription && pc.remoteDescription.type) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                } catch (e) {
+                  console.warn('[Receiver] addIceCandidate warning:', e);
+                }
+              } else {
+                iceCandidateQueue.push(msg.candidate);
+              }
             }
           } else if (msg.type === 'cancel-transfer') {
             setStatus('cancelled');
@@ -148,6 +168,21 @@ export function ReceiveStudio() {
           senderId: 'receiver',
           deviceInfo: getDeviceInfo(),
         });
+
+        // Listen for ICE and connection state changes
+        pc.oniceconnectionstatechange = () => {
+          if (pc.iceConnectionState === 'failed') {
+            setStatus('error');
+            setErrorMessage('Koneksi P2P langsung gagal tersambung. Pastikan kedua perangkat berada di jaringan yang sama atau tidak terhalang firewall/VPN.');
+          }
+        };
+
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'failed') {
+            setStatus('error');
+            setErrorMessage('Jalur koneksi WebRTC terputus.');
+          }
+        };
 
         // Listen for ICE candidates
         pc.onicecandidate = (event) => {
@@ -214,6 +249,17 @@ export function ReceiveStudio() {
         senderId: 'receiver',
       });
       setStatus('connecting');
+      setMetrics({
+        bytesTransferred: 0,
+        totalBytes: totalIncomingSize,
+        speedBps: 0,
+        timeRemainingSec: 0,
+        progressPercent: 0,
+        currentFileIndex: 1,
+        totalFiles: incomingFiles.length,
+        currentFileName: incomingFiles[0]?.name || '',
+        elapsedSeconds: 0,
+      });
       showToast('Transfer disetujui. Menghubungkan jalur P2P...', 'info');
     }
   };

@@ -70,20 +70,22 @@ export async function GET(req: NextRequest) {
 
   const room = rooms.get(roomId);
   if (!room) {
-    return NextResponse.json({ messages: [] });
+    return NextResponse.json({ messages: [], latestTimestamp: since });
   }
 
   // Filter messages intended for this role
-  const messages = room.messages
-    .filter(
-      (m) =>
-        m.timestamp > since &&
-        (m.target === 'all' || m.target === role)
-    )
-    .map((m) => m.msg);
+  const matchingMessages = room.messages.filter(
+    (m) => m.timestamp > since && (m.target === 'all' || m.target === role)
+  );
+
+  const messages = matchingMessages.map((m) => m.msg);
+  const latestTimestamp =
+    matchingMessages.length > 0
+      ? Math.max(...matchingMessages.map((m) => m.timestamp))
+      : since;
 
   return NextResponse.json({
     messages,
-    latestTimestamp: room.messages.length > 0 ? room.messages[room.messages.length - 1].timestamp : since,
+    latestTimestamp,
   });
 }

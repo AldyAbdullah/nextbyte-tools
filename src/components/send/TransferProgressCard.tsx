@@ -16,6 +16,8 @@ export function TransferProgressCard({
   onCancel,
   title = 'Sedang Mentransfer Berkas...',
 }: TransferProgressCardProps) {
+  const isConnecting = title.toLowerCase().includes('menyiapkan');
+
   return (
     <div className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 animate-in fade-in duration-300">
       {/* Header */}
@@ -29,10 +31,16 @@ export function TransferProgressCard({
               {title}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-xs sm:max-w-md">
-              Berkas {metrics.currentFileIndex} dari {metrics.totalFiles}:{' '}
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                {metrics.currentFileName}
-              </span>
+              {metrics.totalFiles > 0 ? (
+                <>
+                  Berkas {metrics.currentFileIndex} dari {metrics.totalFiles}:{' '}
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {metrics.currentFileName}
+                  </span>
+                </>
+              ) : (
+                'Menghubungkan langsung ke perangkat penerima secara peer-to-peer...'
+              )}
             </p>
           </div>
         </div>
@@ -73,7 +81,7 @@ export function TransferProgressCard({
             <Zap className="w-3 h-3 text-amber-500" /> Kecepatan
           </div>
           <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white mt-0.5">
-            {formatBytes(metrics.speedBps)}/s
+            {isConnecting && metrics.speedBps === 0 ? 'Menghubungkan...' : `${formatBytes(metrics.speedBps)}/s`}
           </div>
         </div>
 
@@ -82,7 +90,7 @@ export function TransferProgressCard({
             <Clock className="w-3 h-3 text-cyan-500" /> Estimasi Selesai
           </div>
           <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white mt-0.5">
-            {formatTimeRemaining(metrics.timeRemainingSec)}
+            {isConnecting && metrics.speedBps === 0 ? 'Handshake P2P' : formatTimeRemaining(metrics.timeRemainingSec)}
           </div>
         </div>
 
@@ -91,7 +99,7 @@ export function TransferProgressCard({
             <File className="w-3 h-3 text-blue-500" /> Berkas Aktif
           </div>
           <div className="text-xs font-semibold text-slate-900 dark:text-white mt-1 truncate">
-            {metrics.currentFileName || '-'}
+            {metrics.currentFileName || (isConnecting ? 'Menyiapkan...' : '-')}
           </div>
         </div>
       </div>

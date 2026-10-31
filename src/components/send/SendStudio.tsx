@@ -205,7 +205,9 @@ export function SendStudio() {
       });
       dataChannelRef.current = dc;
 
-      // 4. Create Signaling Session
+      // 4. Create Signaling Session & Candidate Queue
+      const iceCandidateQueue: RTCIceCandidateInit[] = [];
+
       const signaling = createSignalingSession(newCode, 'sender', async (msg) => {
         if (msg.type === 'peer-joined') {
           setReceiverDevice(msg.deviceInfo || null);
@@ -225,6 +227,17 @@ export function SendStudio() {
           });
         } else if (msg.type === 'accept-transfer') {
           setStatus('connecting');
+          setMetrics({
+            bytesTransferred: 0,
+            totalBytes: totalSize,
+            speedBps: 0,
+            timeRemainingSec: 0,
+            progressPercent: 0,
+            currentFileIndex: 1,
+            totalFiles: files.length,
+            currentFileName: files[0]?.name || '',
+            elapsedSeconds: 0,
+          });
 
           // Create offer and send to receiver
           const offer = await pc.createOffer();
@@ -237,10 +250,28 @@ export function SendStudio() {
         } else if (msg.type === 'answer') {
           if (msg.sdp) {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+            while (iceCandidateQueue.length > 0) {
+              const cand = iceCandidateQueue.shift();
+              if (cand) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) {
+                  console.warn('[Sender] Queued candidate warning:', e);
+                }
+              }
+            }
           }
         } else if (msg.type === 'ice-candidate') {
           if (msg.candidate) {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            if (pc.remoteDescription && pc.remoteDescription.type) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+              } catch (e) {
+                console.warn('[Sender] addIceCandidate warning:', e);
+              }
+            } else {
+              iceCandidateQueue.push(msg.candidate);
+            }
           }
         } else if (msg.type === 'reject-transfer') {
           setStatus('rejected');
@@ -251,6 +282,21 @@ export function SendStudio() {
         }
       });
       signalingRef.current = signaling;
+
+      // Listen for ICE and connection state changes
+      pc.oniceconnectionstatechange = () => {
+        if (pc.iceConnectionState === 'failed') {
+          setStatus('error');
+          setErrorMessage('Koneksi P2P langsung gagal tersambung. Pastikan kedua perangkat berada di jaringan yang sama atau tidak terhalang firewall/VPN.');
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'failed') {
+          setStatus('error');
+          setErrorMessage('Jalur koneksi WebRTC terputus.');
+        }
+      };
 
       // Listen for ICE candidates
       pc.onicecandidate = (event) => {
