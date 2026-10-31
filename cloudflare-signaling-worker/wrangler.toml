@@ -1,0 +1,12 @@
+name = "nextbyte-send-signaling"
+main = "src/index.ts"
+compatibility_date = "2024-03-01"
+
+[durable_objects]
+bindings = [
+  { name = "TRANSFER_ROOM", class_name = "TransferRoomDO" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TransferRoomDO"]

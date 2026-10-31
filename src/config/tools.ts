@@ -26,6 +26,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['barcode', 'code128', 'ean13', 'upc', 'code39', 'retail', 'inventory', 'sku']
   },
   {
+    id: 'nextbyte-send',
+    name: 'Nextbyte Send',
+    slug: 'send',
+    description: 'Transfer berkas besar hingga 10 GB langsung antarperangkat (Windows, Android, iPhone, Mac) secara peer-to-peer tanpa login dan tanpa disimpan di server.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Share2',
+    featured: true,
+    badge: 'Baru',
+    tags: ['send', 'file transfer', 'p2p', 'airdrop', 'webrtc', 'share', 'kirim file']
+  },
+  {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',
