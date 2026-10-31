@@ -279,7 +279,10 @@ export function SendStudio() {
             try {
               const res = await currentHandleRef.current.finish();
               if (res) {
-                setReceivedFiles((prev) => [...prev, res]);
+                setReceivedFiles((prev) => {
+                  if (prev.some((f) => f.name === res.name)) return prev;
+                  return [...prev, res];
+                });
               }
             } catch (err) {
               console.warn('Gagal menyelesaikan penulisan berkas:', err);
@@ -290,6 +293,21 @@ export function SendStudio() {
         }
 
         case 'TRANSFER_COMPLETE': {
+          if (currentHandleRef.current) {
+            try {
+              const res = await currentHandleRef.current.finish();
+              if (res) {
+                setReceivedFiles((prev) => {
+                  if (prev.some((f) => f.name === res.name)) return prev;
+                  return [...prev, res];
+                });
+              }
+            } catch (err) {
+              console.warn('Gagal menyelesaikan penulisan berkas di complete:', err);
+            }
+            currentHandleRef.current = null;
+          }
+
           setMetrics((prev) => ({
             ...prev,
             bytesTransferred: prev.totalBytes,
@@ -301,7 +319,7 @@ export function SendStudio() {
           try {
             confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
           } catch {}
-          showToast('Seluruh berkas berhasil diterima & disimpan!', 'success');
+          showToast('Seluruh berkas berhasil diterima!', 'success');
           break;
         }
 
@@ -825,58 +843,39 @@ export function SendStudio() {
 
       {/* 4. STATE: COMPLETED */}
       {status === 'completed' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-12 shadow-2xl text-center space-y-6 animate-in zoom-in-95 max-w-full overflow-hidden">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl text-center space-y-6 animate-in zoom-in-95 max-w-lg mx-auto max-w-full overflow-hidden">
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500/20 text-emerald-500 flex items-center justify-center mx-auto shadow-inner shrink-0">
             <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10" />
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-              Transfer Berhasil Selesai!
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Seluruh berkas telah terkirim sempurna secara peer-to-peer tanpa perantara server.
-            </p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 max-w-sm mx-auto text-xs space-y-1.5">
-            <div className="flex justify-between text-slate-500 dark:text-slate-400">
-              <span>Total Ukuran:</span>
-              <strong className="text-slate-900 dark:text-white">{formatBytes(metrics.totalBytes)}</strong>
-            </div>
-            <div className="flex justify-between text-slate-500 dark:text-slate-400">
-              <span>Status:</span>
-              <strong className="text-emerald-600 dark:text-emerald-400">100% Selesai</strong>
-            </div>
-          </div>
-
-          {/* Received Files List with Direct Download Button and Storage Location info */}
-          {receivedFiles.length > 0 && (
-            <div className="space-y-3 p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-left max-w-lg mx-auto">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
-                <FolderDown className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span>Lokasi Penyimpanan Berkas:</span>
+          {/* IF THIS DEVICE IS THE RECEIVER */}
+          {receivedFiles.length > 0 ? (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+                  Berkas Berhasil Diterima!
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                  Klik tombol <strong>Simpan / Unduh</strong> di bawah untuk menyimpan berkas langsung ke perangkat Anda:
+                </p>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Berkas otomatis tersimpan di folder <strong>Download (Unduhan)</strong> perangkat Anda. Jika berkas belum muncul otomatis di peramban, klik tombol simpan di bawah:
-              </p>
 
-              <div className="space-y-2 pt-1">
+              <div className="space-y-3 pt-1">
                 {receivedFiles.map((file, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 min-w-0 shadow-sm"
+                    className="p-4 rounded-2xl bg-blue-50/60 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900 text-left space-y-3 shadow-sm"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                        <FileCheck2 className="w-4 h-4" />
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
+                        <FileCheck2 className="w-5 h-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate" title={file.name}>
+                        <div className="text-sm font-bold text-slate-900 dark:text-white truncate" title={file.name}>
                           {file.name}
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono">
-                          {formatBytes(file.size)}
+                        <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                          {formatBytes(file.size)} • Siap diunduh
                         </div>
                       </div>
                     </div>
@@ -885,29 +884,58 @@ export function SendStudio() {
                       <a
                         href={file.url}
                         download={file.name}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0 shadow-md shadow-blue-500/20 transition-all"
+                        className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-md shadow-blue-500/25 transition-all"
                       >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Simpan / Unduh</span>
+                        <Download className="w-4 h-4" />
+                        <span>Simpan / Unduh Berkas Ini</span>
                       </a>
                     )}
                   </div>
                 ))}
               </div>
-            </div>
-          )}
 
-          {/* Info for Sender */}
-          {receivedFiles.length === 0 && (
-            <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs text-blue-700 dark:text-blue-300 max-w-sm mx-auto">
-              Berkas telah dikirim dan tersimpan di folder <strong>Download (Unduhan)</strong> pada perangkat penerima.
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 text-left flex items-start gap-2">
+                <FolderDown className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                <span>
+                  Berkas otomatis tersimpan di folder <strong>Download (Unduhan)</strong> perangkat Anda.
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* IF THIS DEVICE IS THE SENDER */
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+                  Pengiriman Berhasil!
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                  Seluruh berkas telah sukses terkirim ke perangkat penerima.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-xs text-left space-y-2">
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                  <span>Total Ukuran Terkirim:</span>
+                  <strong className="text-slate-900 dark:text-white">{formatBytes(metrics.totalBytes)}</strong>
+                </div>
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                  <span>Jumlah Berkas:</span>
+                  <strong className="text-slate-900 dark:text-white">{filesToSend.length} Berkas</strong>
+                </div>
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 flex items-start gap-2">
+                  <FolderDown className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <span>
+                    Berkas telah diterima oleh <strong>{targetPeer?.name || 'perangkat penerima'}</strong>. Silakan periksa layar perangkat penerima untuk menyimpan berkas.
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
           <button
             type="button"
             onClick={handleResetToRadar}
-            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all"
+            className="w-full py-3 px-6 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs sm:text-sm transition-all"
           >
             Kirim Berkas Lainnya
           </button>
