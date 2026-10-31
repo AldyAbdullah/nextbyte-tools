@@ -50,6 +50,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['mail merge', 'word', 'excel', 'surat massal', 'sertifikat', 'docx', 'xlsx', 'csv', 'foto']
   },
   {
+    id: 'word-page-number',
+    name: 'Word Page Number',
+    slug: 'word-page-number',
+    description: 'Tambahkan nomor halaman dinamis otomatis (PAGE / NUMPAGES) ke dokumen Word DOCX: Header/Footer, angka Romawi untuk halaman awal, angka Arab untuk isi, serta halaman sampul tanpa nomor.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'ListOrdered',
+    featured: true,
+    badge: 'Baru',
+    tags: ['word', 'page number', 'nomor halaman', 'docx', 'skripsi', 'romawi', 'arab', 'footer', 'header', 'makalah']
+  },
+  {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',
