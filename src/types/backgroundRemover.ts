@@ -2,6 +2,8 @@ export type BgMode = 'transparent' | 'color' | 'image';
 
 export type RemovalStatus = 'idle' | 'loading-model' | 'processing' | 'done' | 'error';
 
+export type AIModelType = 'isnet_quint8' | 'isnet_fp16';
+
 export interface ProcessProgress {
   stage: string;
   percent: number;

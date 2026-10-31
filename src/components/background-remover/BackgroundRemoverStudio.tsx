@@ -13,6 +13,7 @@ import {
   Image as ImageIcon,
   Check,
   Plus,
+  Zap,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import {
@@ -20,6 +21,7 @@ import {
   RemovalStatus,
   ProcessProgress,
   ProcessedImageResult,
+  AIModelType,
 } from '@/types/backgroundRemover';
 import {
   getImageDimensions,
@@ -54,15 +56,18 @@ export function BackgroundRemoverStudio() {
   const [status, setStatus] = useState<RemovalStatus>('idle');
   const [progress, setProgress] = useState<ProcessProgress>({ stage: '', percent: 0 });
   const [result, setResult] = useState<ProcessedImageResult | null>(null);
+  const [aiModel, setAiModel] = useState<AIModelType>('isnet_quint8');
+  const [usedModel, setUsedModel] = useState<AIModelType>('isnet_quint8');
 
   // Background replacement controls
   const [bgMode, setBgMode] = useState<BgMode>('transparent');
   const [selectedColor, setSelectedColor] = useState<string>('#ffffff');
+  const [customColor, setCustomColor] = useState<string>('#3b82f6');
   const [customBgImageUrl, setCustomBgImageUrl] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   // Handle uploaded file
-  const handleProcessFile = async (file: File) => {
+  const handleProcessFile = async (file: File, targetModel: AIModelType = aiModel) => {
     // Validate format
     const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
@@ -84,9 +89,13 @@ export function BackgroundRemoverStudio() {
     try {
       const { width, height } = await getImageDimensions(file);
 
-      const transparentBlob = await removeImageBackground(file, (p) => {
-        setProgress(p);
-      });
+      const transparentBlob = await removeImageBackground(
+        file,
+        (p) => {
+          setProgress(p);
+        },
+        targetModel
+      );
 
       const transparentUrl = URL.createObjectURL(transparentBlob);
 
@@ -99,6 +108,7 @@ export function BackgroundRemoverStudio() {
         height,
       });
 
+      setUsedModel(targetModel);
       setStatus('done');
       showToast('Latar belakang berhasil dihapus secara cerdas!', 'success');
     } catch (err: unknown) {
@@ -139,65 +149,57 @@ export function BackgroundRemoverStudio() {
   // Handle Custom Background Image Upload
   const handleBgImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (customBgImageUrl) {
-      URL.revokeObjectURL(customBgImageUrl);
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('Harap pilih berkas gambar yang valid.', 'error');
+        return;
+      }
+      if (customBgImageUrl) {
+        URL.revokeObjectURL(customBgImageUrl);
+      }
+      const url = URL.createObjectURL(file);
+      setCustomBgImageUrl(url);
+      setBgMode('image');
+      showToast('Gambar latar kustom berhasil diterapkan!', 'success');
     }
-
-    const url = URL.createObjectURL(file);
-    setCustomBgImageUrl(url);
-    setBgMode('image');
-    showToast('Gambar latar belakang berhasil diterapkan!', 'success');
   };
 
-  // Handle Download Final Composite or Transparent PNG
+  // Handle Final Image Download
   const handleDownload = async () => {
     if (!result) return;
-
     setIsExporting(true);
+
     try {
-      let finalBlob = result.transparentBlob;
+      const compositeBlob = await compositeImageWithBackground(result.transparentBlob, {
+        mode: bgMode,
+        color: bgMode === 'color' ? selectedColor : undefined,
+        bgImageUrl: bgMode === 'image' && customBgImageUrl ? customBgImageUrl : undefined,
+        width: result.width,
+        height: result.height,
+      });
 
-      if (bgMode === 'color') {
-        finalBlob = await compositeImageWithBackground(result.transparentBlob, {
-          mode: 'color',
-          color: selectedColor,
-          width: result.width,
-          height: result.height,
-        });
-      } else if (bgMode === 'image' && customBgImageUrl) {
-        finalBlob = await compositeImageWithBackground(result.transparentBlob, {
-          mode: 'image',
-          bgImageUrl: customBgImageUrl,
-          width: result.width,
-          height: result.height,
-        });
-      }
-
-      // Download
-      const originalBase = result.originalFile.name.replace(/\.[^/.]+$/, '');
-      const downloadName =
-        bgMode === 'transparent'
-          ? `${originalBase}_transparent.png`
-          : `${originalBase}_new_bg.png`;
-
-      const downloadUrl = URL.createObjectURL(finalBlob);
+      // Trigger browser download
+      const downloadUrl = URL.createObjectURL(compositeBlob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = downloadName;
+
+      // Extract filename base
+      const origName = result.originalFile.name;
+      const baseName = origName.substring(0, origName.lastIndexOf('.')) || origName;
+      const suffix = bgMode === 'transparent' ? '_nobg.png' : '_custombg.png';
+      a.download = `${baseName}${suffix}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(downloadUrl);
 
       confetti({
-        particleCount: 70,
+        particleCount: 50,
         spread: 60,
-        origin: { y: 0.6 },
+        origin: { y: 0.8 },
       });
 
-      showToast(`Gambar "${downloadName}" berhasil diunduh!`, 'success');
+      showToast('Gambar berhasil diunduh!', 'success');
     } catch (err) {
       console.error(err);
       showToast('Gagal mengekspor gambar.', 'error');
@@ -206,7 +208,7 @@ export function BackgroundRemoverStudio() {
     }
   };
 
-  // Reset Studio
+  // Reset to initial state
   const handleReset = () => {
     if (result) {
       URL.revokeObjectURL(result.originalUrl);
@@ -237,7 +239,7 @@ export function BackgroundRemoverStudio() {
             id="bg-remover-upload"
           />
 
-          <div className="max-w-md mx-auto space-y-4">
+          <div className="max-w-md mx-auto space-y-5">
             <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-inner">
               <UploadCloud className="w-8 h-8" />
             </div>
@@ -248,6 +250,42 @@ export function BackgroundRemoverStudio() {
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
                 Mendukung format PNG, JPG, JPEG, dan WebP hingga 25 MB.
+              </p>
+            </div>
+
+            {/* AI Model Quality Selector */}
+            <div className="pt-1">
+              <div className="text-[11px] font-semibold text-slate-400 mb-1.5">Pilihan Kualitas AI:</div>
+              <div className="inline-flex items-center p-1 rounded-2xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 w-full text-xs">
+                <button
+                  type="button"
+                  onClick={() => setAiModel('isnet_quint8')}
+                  className={`flex-1 py-2 px-3 rounded-xl font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    aiModel === 'isnet_quint8'
+                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Standar (~44 MB)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiModel('isnet_fp16')}
+                  className={`flex-1 py-2 px-3 rounded-xl font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    aiModel === 'isnet_fp16'
+                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Ultra HD (~88 MB)</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                {aiModel === 'isnet_quint8'
+                  ? '⚡ Rekomendasi: 2x lebih cepat, hemat kuota & RAM, hasil tetap sangat presisi.'
+                  : '💎 Model Float 16-bit: Presisi maksimal untuk studio potret & helai rambut super tipis.'}
               </p>
             </div>
 
@@ -305,10 +343,10 @@ export function BackgroundRemoverStudio() {
           </div>
 
           {/* Progress Bar */}
-          <div className="space-y-1.5">
-            <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+          <div className="space-y-2">
+            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-300"
+                className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${progress.percent}%` }}
               />
             </div>
@@ -318,25 +356,48 @@ export function BackgroundRemoverStudio() {
             </div>
           </div>
 
-          <div className="text-[11px] text-slate-400 italic">
+          <p className="text-[11px] text-slate-400 italic">
             *Pemrosesan pertama memerlukan unduhan model ISNet neural network. Proses selanjutnya akan jauh lebih instan.
-          </div>
+          </p>
         </div>
       )}
 
-      {/* Result Studio Area */}
-      {result && status === 'done' && (
+      {/* Result Workspace (Active when result is generated) */}
+      {result && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Main Visualizer (8 cols) */}
+          {/* Main Comparison Canvas (8 cols) */}
           <div className="lg:col-span-8 space-y-4">
-            <BeforeAfterSlider
-              originalUrl={result.originalUrl}
-              resultUrl={result.transparentUrl}
-              bgColor={bgMode === 'color' ? selectedColor : undefined}
-              bgImageUrl={bgMode === 'image' && customBgImageUrl ? customBgImageUrl : undefined}
-              isTransparent={bgMode === 'transparent'}
-            />
+            <div className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Hasil Pemisahan Objek & Background
+                </span>
+                <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                  {usedModel === 'isnet_fp16' ? (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                      Mode Ultra HD (Float 16-bit)
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5 text-amber-500" />
+                      Mode Standar (INT8 Quantized)
+                    </>
+                  )}
+                </span>
+              </div>
 
+              {/* Before/After Interactive Comparison */}
+              <BeforeAfterSlider
+                originalUrl={result.originalUrl}
+                resultUrl={result.transparentUrl}
+                bgColor={bgMode === 'color' ? selectedColor : undefined}
+                bgImageUrl={bgMode === 'image' && customBgImageUrl ? customBgImageUrl : undefined}
+                isTransparent={bgMode === 'transparent'}
+              />
+            </div>
+
+            {/* Metadata Footer */}
             <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 px-1">
               <span>
                 Dimensi Asli: <strong>{result.width} x {result.height} px</strong>
@@ -422,17 +483,17 @@ export function BackgroundRemoverStudio() {
                       </button>
                     ))}
 
-                    {/* Custom Color Input */}
-                    <label
-                      title="Warna Kustom"
-                      className="w-8 h-8 rounded-full border border-dashed border-slate-400 dark:border-slate-600 flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors relative overflow-hidden"
-                    >
+                    {/* Custom Color Picker Input */}
+                    <label className="relative w-8 h-8 rounded-full border border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-500 flex items-center justify-center cursor-pointer overflow-hidden transition-all">
                       <Plus className="w-4 h-4 text-slate-500" />
                       <input
                         type="color"
-                        value={selectedColor}
-                        onChange={(e) => setSelectedColor(e.target.value)}
-                        className="opacity-0 absolute inset-0 cursor-pointer"
+                        value={customColor}
+                        onChange={(e) => {
+                          setCustomColor(e.target.value);
+                          setSelectedColor(e.target.value);
+                        }}
+                        className="opacity-0 absolute inset-0 cursor-pointer w-full h-full"
                       />
                     </label>
                   </div>
@@ -460,6 +521,19 @@ export function BackgroundRemoverStudio() {
                   >
                     <UploadCloud className="w-4 h-4 text-blue-500" />
                     {customBgImageUrl ? 'Ganti Gambar Latar' : 'Unggah Gambar Latar Sendiri'}
+                  </button>
+                </div>
+              )}
+
+              {/* Switch Model / Re-process option */}
+              {usedModel === 'isnet_quint8' && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => handleProcessFile(result.originalFile, 'isnet_fp16')}
+                    className="w-full py-2 px-3 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/40 hover:bg-blue-100/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                    Bandingkan dengan Mode Ultra HD (~88 MB)
                   </button>
                 </div>
               )}

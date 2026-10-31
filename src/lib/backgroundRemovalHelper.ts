@@ -1,6 +1,7 @@
 import {
   ProcessProgress,
   BackgroundCompositeOptions,
+  AIModelType,
 } from '@/types/backgroundRemover';
 
 /**
@@ -40,7 +41,7 @@ async function optimizeImageForProcessing(
   const targetW = Math.round(width * scale);
   const targetH = Math.round(height * scale);
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const url = URL.createObjectURL(fileOrBlob);
     const img = new Image();
     img.onload = () => {
@@ -58,14 +59,18 @@ async function optimizeImageForProcessing(
       ctx.drawImage(img, 0, 0, targetW, targetH);
       URL.revokeObjectURL(url);
 
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else resolve(fileOrBlob);
-      }, 'image/png');
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve(blob);
+          else resolve(fileOrBlob);
+        },
+        'image/png',
+        1.0
+      );
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Gagal mengoptimasi gambar.'));
+      resolve(fileOrBlob);
     };
     img.src = url;
   });
@@ -76,7 +81,8 @@ async function optimizeImageForProcessing(
  */
 export async function removeImageBackground(
   imageSource: File | Blob,
-  onProgress?: (progress: ProcessProgress) => void
+  onProgress?: (progress: ProcessProgress) => void,
+  modelType: AIModelType = 'isnet_quint8'
 ): Promise<Blob> {
   // 1. Optimize input size if image is extraordinarily large
   onProgress?.({ stage: 'Menyiapkan gambar...', percent: 5 });
@@ -103,7 +109,8 @@ export async function removeImageBackground(
         percent = Math.min(10 + Math.round(ratio * 20), 30);
         details = `${currentMb} MB / ${totalMb} MB`;
       } else if (resourceName.includes('model') || resourceName.includes('isnet')) {
-        stage = 'Mengunduh Model AI ISNet (~44 MB)...';
+        const modelLabel = modelType === 'isnet_fp16' ? 'Ultra HD (~88 MB)' : 'Standar (~44 MB)';
+        stage = `Mengunduh Model AI ${modelLabel}...`;
         percent = Math.min(30 + Math.round(ratio * 45), 75);
         details = `${currentMb} MB / ${totalMb} MB`;
       } else {
@@ -129,9 +136,8 @@ export async function removeImageBackground(
   };
 
   try {
-    // We use isnet_quint8 (44.3 MB instead of 88.1 MB) for 2x faster loading and 50% less RAM
     const resultBlob = await removeBackground(optimizedBlob, {
-      model: 'isnet_quint8',
+      model: modelType,
       device: 'gpu',
       proxyToWorker: true,
       progress: handleLibProgress,
@@ -148,7 +154,7 @@ export async function removeImageBackground(
     // If WebGPU failed or threw, fallback cleanly to CPU
     onProgress?.({ stage: 'Memproses dengan mesin CPU WebAssembly...', percent: 40 });
     const fallbackBlob = await removeBackground(optimizedBlob, {
-      model: 'isnet_quint8',
+      model: modelType,
       device: 'cpu',
       proxyToWorker: true,
       progress: handleLibProgress,
