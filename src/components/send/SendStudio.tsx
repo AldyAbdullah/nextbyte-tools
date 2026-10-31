@@ -9,6 +9,9 @@ import {
   X,
   Copy,
   Check,
+  Download,
+  FolderDown,
+  FileCheck2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -26,7 +29,7 @@ import { LocalWifiRadar } from './LocalWifiRadar';
 import { IncomingTransferModal } from './IncomingTransferModal';
 import { TransferProgressCard } from './TransferProgressCard';
 import { CameraScannerModal } from './CameraScannerModal';
-import { createFileReceiverHandle, FileReceiverHandle } from '@/lib/webrtc/streamingStorage';
+import { createFileReceiverHandle, FileReceiverHandle, FileReceiverResult } from '@/lib/webrtc/streamingStorage';
 import { useToast } from '@/components/common/Toast';
 
 export function SendStudio() {
@@ -54,6 +57,7 @@ export function SendStudio() {
   // Transfer states
   const [targetPeer, setTargetPeer] = useState<LocalPeer | null>(null);
   const [filesToSend, setFilesToSend] = useState<FileTransferItem[]>([]);
+  const [receivedFiles, setReceivedFiles] = useState<FileReceiverResult[]>([]);
   const [incomingRequest, setIncomingRequest] = useState<{
     senderId: string;
     senderName: string;
@@ -273,7 +277,10 @@ export function SendStudio() {
         case 'FILE_END': {
           if (currentHandleRef.current) {
             try {
-              await currentHandleRef.current.finish();
+              const res = await currentHandleRef.current.finish();
+              if (res) {
+                setReceivedFiles((prev) => [...prev, res]);
+              }
             } catch (err) {
               console.warn('Gagal menyelesaikan penulisan berkas:', err);
             }
@@ -539,6 +546,7 @@ export function SendStudio() {
     if (!selected || selected.length === 0 || !targetPeer) return;
 
     cleanupTransfer();
+    setReceivedFiles([]);
     isCancelledRef.current = false;
 
     const fileItems: FileTransferItem[] = Array.from(selected).map((f) => ({
@@ -602,6 +610,7 @@ export function SendStudio() {
     const { files, totalBytes } = incomingRequest;
     setIncomingRequest(null);
     setStatus('transferring');
+    setReceivedFiles([]);
     isCancelledRef.current = false;
 
     const total = totalBytes || files.reduce((acc, f) => acc + f.size, 0);
@@ -654,6 +663,7 @@ export function SendStudio() {
     setStatus('idle');
     setTargetPeer(null);
     setFilesToSend([]);
+    setReceivedFiles([]);
   };
 
   // User entered target PIN manually
@@ -839,6 +849,60 @@ export function SendStudio() {
               <strong className="text-emerald-600 dark:text-emerald-400">100% Selesai</strong>
             </div>
           </div>
+
+          {/* Received Files List with Direct Download Button and Storage Location info */}
+          {receivedFiles.length > 0 && (
+            <div className="space-y-3 p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-left max-w-lg mx-auto">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
+                <FolderDown className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span>Lokasi Penyimpanan Berkas:</span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Berkas otomatis tersimpan di folder <strong>Download (Unduhan)</strong> perangkat Anda. Jika berkas belum muncul otomatis di peramban, klik tombol simpan di bawah:
+              </p>
+
+              <div className="space-y-2 pt-1">
+                {receivedFiles.map((file, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 min-w-0 shadow-sm"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                        <FileCheck2 className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate" title={file.name}>
+                          {file.name}
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          {formatBytes(file.size)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {file.url && (
+                      <a
+                        href={file.url}
+                        download={file.name}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0 shadow-md shadow-blue-500/20 transition-all"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Simpan / Unduh</span>
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Info for Sender */}
+          {receivedFiles.length === 0 && (
+            <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs text-blue-700 dark:text-blue-300 max-w-sm mx-auto">
+              Berkas telah dikirim dan tersimpan di folder <strong>Download (Unduhan)</strong> pada perangkat penerima.
+            </div>
+          )}
 
           <button
             type="button"

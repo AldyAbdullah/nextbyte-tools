@@ -1,8 +1,15 @@
 import { supportsFileSystemAccess } from './deviceDetection';
 
+export interface FileReceiverResult {
+  blob?: Blob;
+  url?: string;
+  name: string;
+  size: number;
+}
+
 export interface FileReceiverHandle {
   writeChunk: (chunk: ArrayBuffer) => Promise<void>;
-  finish: () => Promise<void>;
+  finish: () => Promise<FileReceiverResult>;
   cancel: () => Promise<void>;
 }
 
@@ -27,13 +34,19 @@ export async function createFileReceiverHandle(
           suggestedName: fileName,
         });
         const writable = await fileHandle.createWritable();
+        let bytesWritten = 0;
 
         return {
           writeChunk: async (chunk: ArrayBuffer) => {
             await writable.write(chunk);
+            bytesWritten += chunk.byteLength;
           },
           finish: async () => {
             await writable.close();
+            return {
+              name: fileName,
+              size: bytesWritten,
+            };
           },
           cancel: async () => {
             try {
@@ -50,23 +63,37 @@ export async function createFileReceiverHandle(
     }
   }
 
-  // Fallback: Buffered in-memory blob assembly
+  // Fallback: Buffered in-memory blob assembly & auto-download
   const chunks: ArrayBuffer[] = [];
+  let totalBytes = 0;
 
   return {
     writeChunk: async (chunk: ArrayBuffer) => {
       chunks.push(chunk);
+      totalBytes += chunk.byteLength;
     },
     finish: async () => {
       const blob = new Blob(chunks, { type: fileType || 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+      // Attempt automatic download trigger
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (e) {
+        console.warn('Auto-click download prevented by browser:', e);
+      }
+
+      return {
+        name: fileName,
+        size: totalBytes,
+        blob,
+        url,
+      };
     },
     cancel: async () => {
       chunks.length = 0;
