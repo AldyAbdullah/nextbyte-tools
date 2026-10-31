@@ -120,6 +120,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['image', 'sharpener', 'enhance', 'photo', 'clarity', 'unsharp-mask', 'ktp', 'dokumen']
   },
   {
+    id: 'image-background-remover',
+    name: 'Image Background Remover',
+    slug: 'image-background-remover',
+    description: 'Hapus background foto potret, produk, dan logo otomatis berbasis AI ISNet: download PNG transparan, ganti warna latar pasfoto, atau gunakan background gambar baru.',
+    category: 'Media',
+    status: 'available',
+    iconName: 'Eraser',
+    featured: true,
+    badge: 'Baru',
+    tags: ['background remover', 'hapus background', 'transparan', 'png', 'pasfoto', 'ai', 'foto', 'produk']
+  },
+  {
     id: 'image-converter',
     name: 'Image Format Converter',
     slug: 'image-converter',

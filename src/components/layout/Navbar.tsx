@@ -25,6 +25,7 @@ export function Navbar() {
     { href: '/tools/caption-generator', label: 'Caption' },
     { href: '/tools/image-compressor', label: 'Compressor' },
     { href: '/tools/image-sharpener', label: 'Sharpener' },
+    { href: '/tools/image-background-remover', label: 'BG Remover' },
     { href: '/about', label: 'About' },
   ];
 

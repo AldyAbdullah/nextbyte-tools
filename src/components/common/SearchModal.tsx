@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, X, QrCode, Barcode, KeyRound, FileCode2, Minimize2, Image, FileText, Link2, Binary, Type, AlignLeft, ArrowRight, Sparkles, Share2, Mail, ListOrdered } from 'lucide-react';
+import { Search, X, QrCode, Barcode, KeyRound, FileCode2, Minimize2, Image, FileText, Link2, Binary, Type, AlignLeft, ArrowRight, Sparkles, Share2, Mail, ListOrdered, Eraser } from 'lucide-react';
 import { TOOLS_REGISTRY } from '@/config/tools';
 import { ToolItem } from '@/types/tools';
 
@@ -13,6 +13,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Share2,
   Mail,
   ListOrdered,
+  Eraser,
   KeyRound,
   FileCode2,
   Minimize2,

@@ -20,7 +20,8 @@ import {
   Sparkles,
   Share2,
   Mail,
-  ListOrdered
+  ListOrdered,
+  Eraser
 } from 'lucide-react';
 import { TOOLS_REGISTRY, TOOL_CATEGORIES } from '@/config/tools';
 import { ToolCategory } from '@/types/tools';
@@ -32,6 +33,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Share2,
   Mail,
   ListOrdered,
+  Eraser,
   KeyRound,
   FileCode2,
   Minimize2,
