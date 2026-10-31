@@ -38,6 +38,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['send', 'file transfer', 'p2p', 'airdrop', 'webrtc', 'share', 'kirim file']
   },
   {
+    id: 'mail-merge',
+    name: 'Word Mail Merge',
+    slug: 'mail-merge',
+    description: 'Buat ratusan surat, sertifikat, dan dokumen Word massal dari template DOCX dan data Excel lengkap dengan foto, nomor otomatis, dan download ZIP.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Mail',
+    featured: true,
+    badge: 'Baru',
+    tags: ['mail merge', 'word', 'excel', 'surat massal', 'sertifikat', 'docx', 'xlsx', 'csv', 'foto']
+  },
+  {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',

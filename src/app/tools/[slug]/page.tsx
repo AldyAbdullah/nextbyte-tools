@@ -20,7 +20,8 @@ import {
   AlignLeft,
   Barcode,
   Sparkles,
-  Share2
+  Share2,
+  Mail
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -28,6 +29,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Barcode,
   Sparkles,
   Share2,
+  Mail,
   KeyRound,
   FileCode2,
   Minimize2,
@@ -47,7 +49,7 @@ interface ToolPageProps {
 
 export function generateStaticParams() {
   return TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'image-compressor', 'image-sharpener', 'send', 'receive'].includes(tool.slug)
+    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'image-compressor', 'image-sharpener', 'send', 'receive'].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
   }));
@@ -74,6 +76,9 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   }
   if (slug === 'barcode-generator') {
     redirect('/tools/barcode-generator');
+  }
+  if (slug === 'mail-merge') {
+    redirect('/tools/mail-merge');
   }
   if (slug === 'image-compressor') {
     redirect('/tools/image-compressor');

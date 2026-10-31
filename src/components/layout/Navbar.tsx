@@ -20,6 +20,7 @@ export function Navbar() {
     { href: '/send', label: 'Send' },
     { href: '/tools/qr-code-generator', label: 'QR Generator' },
     { href: '/tools/barcode-generator', label: 'Barcode' },
+    { href: '/tools/mail-merge', label: 'Mail Merge' },
     { href: '/tools/image-compressor', label: 'Compressor' },
     { href: '/tools/image-sharpener', label: 'Sharpener' },
     { href: '/about', label: 'About' },

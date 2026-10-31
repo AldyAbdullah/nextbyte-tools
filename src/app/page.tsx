@@ -23,7 +23,8 @@ import {
   Layers,
   Barcode,
   Sparkles,
-  Share2
+  Share2,
+  Mail
 } from 'lucide-react';
 import { TOOLS_REGISTRY, TOOL_CATEGORIES } from '@/config/tools';
 import { ToolCategory } from '@/types/tools';
@@ -33,6 +34,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Barcode,
   Sparkles,
   Share2,
+  Mail,
   KeyRound,
   FileCode2,
   Minimize2,
