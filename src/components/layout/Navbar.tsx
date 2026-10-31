@@ -22,6 +22,7 @@ export function Navbar() {
     { href: '/tools/barcode-generator', label: 'Barcode' },
     { href: '/tools/mail-merge', label: 'Mail Merge' },
     { href: '/tools/word-page-number', label: 'Page Number' },
+    { href: '/tools/caption-generator', label: 'Caption' },
     { href: '/tools/image-compressor', label: 'Compressor' },
     { href: '/tools/image-sharpener', label: 'Sharpener' },
     { href: '/about', label: 'About' },

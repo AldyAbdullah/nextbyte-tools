@@ -51,7 +51,7 @@ interface ToolPageProps {
 
 export function generateStaticParams() {
   return TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'image-compressor', 'image-sharpener', 'send', 'receive'].includes(tool.slug)
+    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'send', 'receive'].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
   }));
@@ -84,6 +84,9 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   }
   if (slug === 'word-page-number') {
     redirect('/tools/word-page-number');
+  }
+  if (slug === 'caption-generator') {
+    redirect('/tools/caption-generator');
   }
   if (slug === 'image-compressor') {
     redirect('/tools/image-compressor');

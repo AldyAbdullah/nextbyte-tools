@@ -62,6 +62,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['word', 'page number', 'nomor halaman', 'docx', 'skripsi', 'romawi', 'arab', 'footer', 'header', 'makalah']
   },
   {
+    id: 'caption-generator',
+    name: 'Word Caption Generator',
+    slug: 'caption-generator',
+    description: 'Tambahkan caption gambar dan tabel otomatis berdasarkan BAB (Gambar 1.1, Tabel 2.1) serta buat halaman Daftar Gambar dan Daftar Tabel dinamis (Word SEQ & TOC).',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Image',
+    featured: true,
+    badge: 'Baru',
+    tags: ['caption', 'word', 'gambar', 'tabel', 'daftar gambar', 'daftar tabel', 'docx', 'skripsi', 'seq', 'toc']
+  },
+  {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',
