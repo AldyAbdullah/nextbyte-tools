@@ -41,6 +41,16 @@ export function getDeviceInfo(): DeviceInfo {
   return { browser, os, deviceType };
 }
 
+export function getFriendlyDeviceName(info: DeviceInfo): string {
+  if (info.deviceType === 'mobile') {
+    return `${info.os} Phone (${info.browser})`;
+  } else if (info.deviceType === 'tablet') {
+    return `${info.os} Tablet (${info.browser})`;
+  } else {
+    return `${info.os} PC (${info.browser})`;
+  }
+}
+
 /**
  * Check if the browser supports File System Access API streaming directly to disk
  */

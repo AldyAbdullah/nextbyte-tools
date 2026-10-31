@@ -1,53 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SignalingMessage } from '@/types/nextbyteSend';
 
-interface StoredRoom {
-  createdAt: number;
-  messages: Array<{ target: 'sender' | 'receiver' | 'all'; msg: SignalingMessage; timestamp: number }>;
+interface TargetedMessage {
+  id: string;
+  fromPeerId: string;
+  targetPeerId: string;
+  msg: SignalingMessage;
+  timestamp: number;
 }
 
-// In-memory ephemeral room store (auto-expires in 15 minutes)
-const rooms = new Map<string, StoredRoom>();
+// In-memory queue of signaling messages per peer (auto-cleans up)
+const peerInboxes = new Map<string, TargetedMessage[]>();
 
-function cleanupExpiredRooms() {
+function cleanupOldMessages() {
   const now = Date.now();
-  const maxAge = 15 * 60 * 1000; // 15 mins
-  for (const [id, room] of rooms.entries()) {
-    if (now - room.createdAt > maxAge) {
-      rooms.delete(id);
+  const maxAge = 60 * 1000; // 1 minute max age for signaling packets
+  for (const [peerId, msgs] of peerInboxes.entries()) {
+    const valid = msgs.filter((m) => now - m.timestamp < maxAge);
+    if (valid.length === 0) {
+      peerInboxes.delete(peerId);
+    } else {
+      peerInboxes.set(peerId, valid);
     }
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    cleanupExpiredRooms();
+    cleanupOldMessages();
     const body = await req.json();
-    const { roomId, target = 'all', message } = body as {
-      roomId: string;
-      target?: 'sender' | 'receiver' | 'all';
+    const { targetPeerId, fromPeerId, message } = body as {
+      targetPeerId: string;
+      fromPeerId: string;
       message: SignalingMessage;
     };
 
-    if (!roomId || !message) {
-      return NextResponse.json({ error: 'Missing roomId or message' }, { status: 400 });
+    if (!targetPeerId || !message) {
+      return NextResponse.json({ error: 'Missing targetPeerId or message' }, { status: 400 });
     }
 
-    let room = rooms.get(roomId);
-    if (!room) {
-      room = { createdAt: Date.now(), messages: [] };
-      rooms.set(roomId, room);
+    let inbox = peerInboxes.get(targetPeerId);
+    if (!inbox) {
+      inbox = [];
+      peerInboxes.set(targetPeerId, inbox);
     }
 
-    room.messages.push({
-      target,
+    inbox.push({
+      id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      fromPeerId: fromPeerId || message.senderId,
+      targetPeerId,
       msg: message,
       timestamp: Date.now(),
     });
 
-    // Keep max 100 recent messages per room
-    if (room.messages.length > 100) {
-      room.messages.splice(0, room.messages.length - 100);
+    // Keep max 50 pending messages per peer
+    if (inbox.length > 50) {
+      inbox.splice(0, inbox.length - 50);
     }
 
     return NextResponse.json({ success: true });
@@ -58,31 +66,20 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  cleanupExpiredRooms();
+  cleanupOldMessages();
   const { searchParams } = new URL(req.url);
-  const roomId = searchParams.get('roomId');
-  const role = searchParams.get('role') as 'sender' | 'receiver' | null;
+  const peerId = searchParams.get('peerId') || searchParams.get('roomId');
   const since = Number(searchParams.get('since') || '0');
 
-  if (!roomId || !role) {
-    return NextResponse.json({ error: 'Missing roomId or role' }, { status: 400 });
+  if (!peerId) {
+    return NextResponse.json({ error: 'Missing peerId' }, { status: 400 });
   }
 
-  const room = rooms.get(roomId);
-  if (!room) {
-    return NextResponse.json({ messages: [], latestTimestamp: since });
-  }
-
-  // Filter messages intended for this role
-  const matchingMessages = room.messages.filter(
-    (m) => m.timestamp > since && (m.target === 'all' || m.target === role)
-  );
-
-  const messages = matchingMessages.map((m) => m.msg);
+  const inbox = peerInboxes.get(peerId) || [];
+  const matching = inbox.filter((m) => m.timestamp > since);
+  const messages = matching.map((m) => m.msg);
   const latestTimestamp =
-    matchingMessages.length > 0
-      ? Math.max(...matchingMessages.map((m) => m.timestamp))
-      : since;
+    matching.length > 0 ? Math.max(...matching.map((m) => m.timestamp)) : since;
 
   return NextResponse.json({
     messages,

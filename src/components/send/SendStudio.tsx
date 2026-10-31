@@ -1,20 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  UploadCloud,
-  File,
-  Trash2,
-  Share2,
-  Copy,
-  Check,
   RefreshCw,
-  Sparkles,
-  QrCode,
-  ShieldCheck,
   CheckCircle2,
   AlertTriangle,
+  X,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -22,43 +13,47 @@ import {
   TransferStatus,
   TransferMetrics,
   SignalingMessage,
+  LocalPeer,
 } from '@/types/nextbyteSend';
-import { formatBytes, getDeviceInfo } from '@/lib/webrtc/deviceDetection';
-import { DeviceBadge } from './DeviceBadge';
+import {
+  formatBytes,
+  getDeviceInfo,
+  getFriendlyDeviceName,
+} from '@/lib/webrtc/deviceDetection';
+import { LocalWifiRadar } from './LocalWifiRadar';
+import { IncomingTransferModal } from './IncomingTransferModal';
 import { TransferProgressCard } from './TransferProgressCard';
-import { streamFilesOverDataChannel } from '@/lib/webrtc/dataChannelTransfer';
-import { createSignalingSession, SignalingSession } from '@/lib/webrtc/signalingClient';
+import { streamFilesOverDataChannel, setupDataChannelReceiver } from '@/lib/webrtc/dataChannelTransfer';
 import { useToast } from '@/components/common/Toast';
-
-function generateRandomCode(): string {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-  let p1 = '';
-  let p2 = '';
-  for (let i = 0; i < 3; i++) {
-    p1 += chars.charAt(Math.floor(Math.random() * chars.length));
-    p2 += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `${p1}-${p2}`;
-}
 
 export function SendStudio() {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrContainerRef = useRef<HTMLDivElement>(null);
 
-  const [files, setFiles] = useState<FileTransferItem[]>([]);
-  const [status, setStatus] = useState<TransferStatus>('selecting');
-  const [roomCode, setRoomCode] = useState<string>('');
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [receiverDevice, setReceiverDevice] = useState<SignalingMessage['deviceInfo'] | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [isDragging, setIsDragging] = useState(false);
+  // Local Peer identification
+  const [myPeer, setMyPeer] = useState<LocalPeer | null>(null);
+  const [nearbyPeers, setNearbyPeers] = useState<LocalPeer[]>([]);
+  const [showQrModal, setShowQrModal] = useState<boolean>(false);
 
-  // WebRTC & Transfer states
+  // Transfer states
+  const [targetPeer, setTargetPeer] = useState<LocalPeer | null>(null);
+  const [filesToSend, setFilesToSend] = useState<FileTransferItem[]>([]);
+  const [incomingRequest, setIncomingRequest] = useState<{
+    senderId: string;
+    senderName: string;
+    files: Array<{ id: string; name: string; size: number; type: string }>;
+  } | null>(null);
+
+  const [status, setStatus] = useState<TransferStatus>('idle');
+  const [errorMessage, setErrorMessage] = useState<string>('');
+
+  // WebRTC references
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
-  const signalingRef = useRef<SignalingSession | null>(null);
   const isCancelledRef = useRef<boolean>(false);
+  const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
+  const receiverCancelRef = useRef<(() => void) | null>(null);
 
   const [metrics, setMetrics] = useState<TransferMetrics>({
     bytesTransferred: 0,
@@ -72,31 +67,27 @@ export function SendStudio() {
     elapsedSeconds: 0,
   });
 
-  const totalSize = files.reduce((acc, f) => acc + f.size, 0);
-
-  // Add files from input / dropzone
-  const handleAddFiles = useCallback((incomingFiles: FileList | File[]) => {
-    const newItems: FileTransferItem[] = Array.from(incomingFiles).map((file) => ({
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      file,
-    }));
-
-    setFiles((prev) => [...prev, ...newItems]);
+  // 1. Initialize self peer
+  useEffect(() => {
+    const info = getDeviceInfo();
+    const peerId = `peer_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const peer: LocalPeer = {
+      id: peerId,
+      name: getFriendlyDeviceName(info),
+      deviceType: info.deviceType,
+      os: info.os,
+      browser: info.browser,
+      lastSeen: Date.now(),
+    };
+    setMyPeer(peer);
   }, []);
 
-  const handleRemoveFile = (id: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
-  };
-
-  const handleClearFiles = () => {
-    setFiles([]);
-  };
-
-  // Cleanup WebRTC and signaling
+  // Cleanup WebRTC connection
   const cleanupConnections = useCallback(() => {
+    if (receiverCancelRef.current) {
+      receiverCancelRef.current();
+      receiverCancelRef.current = null;
+    }
     if (dataChannelRef.current) {
       dataChannelRef.current.close();
       dataChannelRef.current = null;
@@ -105,10 +96,7 @@ export function SendStudio() {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-    if (signalingRef.current) {
-      signalingRef.current.close();
-      signalingRef.current = null;
-    }
+    iceCandidateQueueRef.current = [];
   }, []);
 
   useEffect(() => {
@@ -117,27 +105,419 @@ export function SendStudio() {
     };
   }, [cleanupConnections]);
 
-  // Cancel transfer
-  const handleCancelTransfer = useCallback(() => {
+  // 2. Heartbeat to discover peers on the same Wi-Fi
+  useEffect(() => {
+    if (!myPeer) return;
+
+    let isMounted = true;
+    const syncPeers = async () => {
+      try {
+        const res = await fetch('/api/send/peers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ peer: myPeer }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data.peers)) {
+            setNearbyPeers(data.peers);
+          }
+        }
+      } catch {
+        // silent transient network glitch
+      }
+    };
+
+    syncPeers();
+    const interval = setInterval(syncPeers, 1200);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      // Notify server we left
+      fetch(`/api/send/peers?peerId=${myPeer.id}`, { method: 'DELETE' }).catch(() => {});
+    };
+  }, [myPeer]);
+
+  // 3. Signaling Polling for incoming signals
+  useEffect(() => {
+    if (!myPeer) return;
+
+    let isMounted = true;
+    let lastTs = Date.now();
+
+    const pollSignals = async () => {
+      try {
+        const res = await fetch(`/api/send/signal?peerId=${myPeer.id}&since=${lastTs}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data.messages) && data.messages.length > 0) {
+            lastTs = data.latestTimestamp || lastTs;
+            for (const msg of data.messages) {
+              await handleSignalingMessage(msg);
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const interval = setInterval(pollSignals, 350);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [myPeer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Send signaling packet to target peer
+  const sendSignal = async (targetId: string, message: SignalingMessage) => {
+    if (!myPeer) return;
+    try {
+      await fetch('/api/send/signal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetPeerId: targetId,
+          fromPeerId: myPeer.id,
+          message,
+        }),
+      });
+    } catch (err) {
+      console.warn('Failed to dispatch signaling message:', err);
+    }
+  };
+
+  // 4. Handle incoming signaling messages
+  const handleSignalingMessage = async (msg: SignalingMessage) => {
+    if (!myPeer) return;
+
+    if (msg.type === 'file-list') {
+      // Incoming request from another device!
+      const senderName = msg.deviceInfo ? getFriendlyDeviceName(msg.deviceInfo) : 'Perangkat Wi-Fi';
+      setIncomingRequest({
+        senderId: msg.senderId,
+        senderName,
+        files: msg.files || [],
+      });
+    } else if (msg.type === 'accept-transfer') {
+      // Receiver accepted our files! Begin WebRTC Offer
+      setStatus('connecting');
+      if (peerConnectionRef.current) {
+        try {
+          const offer = await peerConnectionRef.current.createOffer();
+          await peerConnectionRef.current.setLocalDescription(offer);
+          await sendSignal(msg.senderId, {
+            type: 'offer',
+            senderId: myPeer.id,
+            sdp: offer,
+          });
+        } catch (e) {
+          console.error('Failed to create offer:', e);
+        }
+      }
+    } else if (msg.type === 'offer') {
+      // Receiver received offer -> set remote description and create answer
+      if (peerConnectionRef.current && msg.sdp) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+
+        // Flush queued candidates
+        while (iceCandidateQueueRef.current.length > 0) {
+          const cand = iceCandidateQueueRef.current.shift();
+          if (cand) {
+            try {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) {
+              console.warn('Flushing candidate error:', e);
+            }
+          }
+        }
+
+        const answer = await peerConnectionRef.current.createAnswer();
+        await peerConnectionRef.current.setLocalDescription(answer);
+
+        await sendSignal(msg.senderId, {
+          type: 'answer',
+          senderId: myPeer.id,
+          sdp: answer,
+        });
+      }
+    } else if (msg.type === 'answer') {
+      // Sender received answer
+      if (peerConnectionRef.current && msg.sdp) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+
+        // Flush queued candidates
+        while (iceCandidateQueueRef.current.length > 0) {
+          const cand = iceCandidateQueueRef.current.shift();
+          if (cand) {
+            try {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) {
+              console.warn('Flushing candidate error:', e);
+            }
+          }
+        }
+      }
+    } else if (msg.type === 'ice-candidate') {
+      if (msg.candidate) {
+        const pc = peerConnectionRef.current;
+        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          } catch (e) {
+            console.warn('addIceCandidate error:', e);
+          }
+        } else {
+          iceCandidateQueueRef.current.push(msg.candidate);
+        }
+      }
+    } else if (msg.type === 'reject-transfer') {
+      setStatus('rejected');
+      cleanupConnections();
+      showToast('Penerima menolak transfer berkas.', 'info');
+    } else if (msg.type === 'cancel-transfer') {
+      setStatus('cancelled');
+      cleanupConnections();
+      showToast('Transfer dibatalkan oleh perangkat lain.', 'info');
+    }
+  };
+
+  // 5. User clicks on a nearby peer to send files
+  const handleSelectPeerToTarget = (peer: LocalPeer) => {
+    setTargetPeer(peer);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  // 6. User selected files from file picker
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files;
+    if (!selected || selected.length === 0 || !targetPeer || !myPeer) return;
+
+    cleanupConnections();
+    isCancelledRef.current = false;
+
+    const fileItems: FileTransferItem[] = Array.from(selected).map((f) => ({
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      name: f.name,
+      size: f.size,
+      type: f.type,
+      file: f,
+    }));
+
+    setFilesToSend(fileItems);
+    setStatus('waiting_for_receiver');
+    const totalBytes = fileItems.reduce((acc, f) => acc + f.size, 0);
+
+    setMetrics({
+      bytesTransferred: 0,
+      totalBytes,
+      speedBps: 0,
+      timeRemainingSec: 0,
+      progressPercent: 0,
+      currentFileIndex: 1,
+      totalFiles: fileItems.length,
+      currentFileName: fileItems[0].name,
+      elapsedSeconds: 0,
+    });
+
+    // Setup WebRTC Sender
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+      ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+    });
+    peerConnectionRef.current = pc;
+
+    const dc = pc.createDataChannel('nextbyteSendChannel', { ordered: true });
+    dataChannelRef.current = dc;
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && targetPeer) {
+        sendSignal(targetPeer.id, {
+          type: 'ice-candidate',
+          senderId: myPeer.id,
+          candidate: event.candidate.toJSON(),
+        });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        setStatus('error');
+        setErrorMessage('Koneksi P2P langsung Wi-Fi gagal tersambung. Pastikan kedua perangkat tersambung ke Wi-Fi yang sama.');
+      }
+    };
+
+    dc.onopen = async () => {
+      setStatus('transferring');
+      try {
+        await streamFilesOverDataChannel(
+          dc,
+          fileItems,
+          (m) => setMetrics(m),
+          () => isCancelledRef.current
+        );
+
+        setStatus('completed');
+        try {
+          confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+        } catch {}
+        showToast('Seluruh berkas berhasil dikirimkan!', 'success');
+      } catch (err: unknown) {
+        if (!isCancelledRef.current) {
+          const errText = err instanceof Error ? err.message : 'Koneksi transfer terputus.';
+          setErrorMessage(errText);
+          setStatus('error');
+        }
+      }
+    };
+
+    // Send transfer request metadata to target peer
+    await sendSignal(targetPeer.id, {
+      type: 'file-list',
+      senderId: myPeer.id,
+      deviceInfo: getDeviceInfo(),
+      files: fileItems.map((f) => ({
+        id: f.id,
+        name: f.name,
+        size: f.size,
+        type: f.type,
+      })),
+    });
+  };
+
+  // 7. Receiver accepts incoming transfer
+  const handleAcceptIncoming = async () => {
+    if (!incomingRequest || !myPeer) return;
+
+    cleanupConnections();
+    isCancelledRef.current = false;
+    const { senderId, files } = incomingRequest;
+    setIncomingRequest(null);
+    setStatus('connecting');
+
+    const totalExpectedBytes = files.reduce((acc, f) => acc + f.size, 0);
+
+    setMetrics({
+      bytesTransferred: 0,
+      totalBytes: totalExpectedBytes,
+      speedBps: 0,
+      timeRemainingSec: 0,
+      progressPercent: 0,
+      currentFileIndex: 1,
+      totalFiles: files.length,
+      currentFileName: files[0]?.name || '',
+      elapsedSeconds: 0,
+    });
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+      ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+    });
+    peerConnectionRef.current = pc;
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendSignal(senderId, {
+          type: 'ice-candidate',
+          senderId: myPeer.id,
+          candidate: event.candidate.toJSON(),
+        });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        setStatus('error');
+        setErrorMessage('Koneksi P2P langsung Wi-Fi gagal tersambung.');
+      }
+    };
+
+    pc.ondatachannel = (event) => {
+      setStatus('transferring');
+      const dc = event.channel;
+
+      const handle = setupDataChannelReceiver(
+        dc,
+        totalExpectedBytes,
+        files.length,
+        (m) => setMetrics(m),
+        () => {
+          setStatus('completed');
+          try {
+            confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+          } catch {}
+          showToast('Seluruh berkas berhasil diterima & disimpan!', 'success');
+        },
+        (err) => {
+          setErrorMessage(err.message || 'Gagal menerima berkas.');
+          setStatus('error');
+        }
+      );
+
+      receiverCancelRef.current = handle.cancel;
+    };
+
+    // Notify sender we accepted
+    await sendSignal(senderId, {
+      type: 'accept-transfer',
+      senderId: myPeer.id,
+    });
+  };
+
+  // 8. Receiver rejects incoming transfer
+  const handleRejectIncoming = async () => {
+    if (!incomingRequest || !myPeer) return;
+    const { senderId } = incomingRequest;
+    setIncomingRequest(null);
+    await sendSignal(senderId, {
+      type: 'reject-transfer',
+      senderId: myPeer.id,
+      reason: 'Penerima menolak transfer.',
+    });
+  };
+
+  // 9. Cancel ongoing transfer
+  const handleCancelTransfer = async () => {
     isCancelledRef.current = true;
-    if (signalingRef.current) {
-      signalingRef.current.send({
+    if (myPeer && targetPeer) {
+      await sendSignal(targetPeer.id, {
         type: 'cancel-transfer',
-        senderId: 'sender',
-        reason: 'Transfer dibatalkan oleh pengirim.',
+        senderId: myPeer.id,
       });
     }
     cleanupConnections();
-    setStatus('selecting');
+    setStatus('idle');
+    setTargetPeer(null);
+    setFilesToSend([]);
     showToast('Transfer dibatalkan.', 'info');
-  }, [cleanupConnections, showToast]);
+  };
 
-  // Render QR Code when roomCode is active
+  // Reset to radar idle state
+  const handleResetToRadar = () => {
+    cleanupConnections();
+    setStatus('idle');
+    setTargetPeer(null);
+    setFilesToSend([]);
+  };
+
+  // Render QR Code in modal
   useEffect(() => {
-    if (status !== 'waiting_for_receiver' || !roomCode || !qrContainerRef.current) return;
+    if (!showQrModal || !qrContainerRef.current) return;
 
     let isMounted = true;
-    const directUrl = `${window.location.origin}/receive?code=${roomCode}`;
+    const directUrl = `${window.location.origin}/send`;
 
     async function renderQr() {
       try {
@@ -146,8 +526,8 @@ export function SendStudio() {
         qrContainerRef.current.innerHTML = '';
 
         const qr = new QRCodeStyling({
-          width: 180,
-          height: 180,
+          width: 200,
+          height: 200,
           data: directUrl,
           dotsOptions: {
             color: '#2563eb',
@@ -164,402 +544,76 @@ export function SendStudio() {
 
         qr.append(qrContainerRef.current);
       } catch (err) {
-        console.warn('Gagal merender QR Code styling:', err);
+        console.warn('Gagal merender QR Code:', err);
       }
     }
 
     renderQr();
-
     return () => {
       isMounted = false;
     };
-  }, [status, roomCode]);
-
-  // Initialize transfer room & signaling
-  const handleStartTransfer = async () => {
-    if (files.length === 0) {
-      showToast('Mohon pilih setidaknya 1 berkas untuk dikirim.', 'error');
-      return;
-    }
-
-    cleanupConnections();
-    isCancelledRef.current = false;
-    const newCode = generateRandomCode();
-    setRoomCode(newCode);
-    setStatus('waiting_for_receiver');
-    setReceiverDevice(null);
-    setErrorMessage('');
-
-    try {
-      // 1. Fetch ICE servers
-      const iceRes = await fetch('/api/turn-credentials');
-      const { iceServers } = await iceRes.json();
-
-      // 2. Initialize PeerConnection
-      const pc = new RTCPeerConnection({ iceServers });
-      peerConnectionRef.current = pc;
-
-      // 3. Create DataChannel
-      const dc = pc.createDataChannel('nextbyteSendChannel', {
-        ordered: true,
-      });
-      dataChannelRef.current = dc;
-
-      // 4. Create Signaling Session & Candidate Queue
-      const iceCandidateQueue: RTCIceCandidateInit[] = [];
-
-      const signaling = createSignalingSession(newCode, 'sender', async (msg) => {
-        if (msg.type === 'peer-joined') {
-          setReceiverDevice(msg.deviceInfo || null);
-          setStatus('receiver_connected');
-
-          // Send file metadata list to receiver for approval
-          signaling.send({
-            type: 'file-list',
-            senderId: 'sender',
-            deviceInfo: getDeviceInfo(),
-            files: files.map((f) => ({
-              id: f.id,
-              name: f.name,
-              size: f.size,
-              type: f.type,
-            })),
-          });
-        } else if (msg.type === 'accept-transfer') {
-          setStatus('connecting');
-          setMetrics({
-            bytesTransferred: 0,
-            totalBytes: totalSize,
-            speedBps: 0,
-            timeRemainingSec: 0,
-            progressPercent: 0,
-            currentFileIndex: 1,
-            totalFiles: files.length,
-            currentFileName: files[0]?.name || '',
-            elapsedSeconds: 0,
-          });
-
-          // Create offer and send to receiver
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          signaling.send({
-            type: 'offer',
-            senderId: 'sender',
-            sdp: offer,
-          });
-        } else if (msg.type === 'answer') {
-          if (msg.sdp) {
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-            while (iceCandidateQueue.length > 0) {
-              const cand = iceCandidateQueue.shift();
-              if (cand) {
-                try {
-                  await pc.addIceCandidate(new RTCIceCandidate(cand));
-                } catch (e) {
-                  console.warn('[Sender] Queued candidate warning:', e);
-                }
-              }
-            }
-          }
-        } else if (msg.type === 'ice-candidate') {
-          if (msg.candidate) {
-            if (pc.remoteDescription && pc.remoteDescription.type) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-              } catch (e) {
-                console.warn('[Sender] addIceCandidate warning:', e);
-              }
-            } else {
-              iceCandidateQueue.push(msg.candidate);
-            }
-          }
-        } else if (msg.type === 'reject-transfer') {
-          setStatus('rejected');
-          cleanupConnections();
-        } else if (msg.type === 'cancel-transfer') {
-          setStatus('cancelled');
-          cleanupConnections();
-        }
-      });
-      signalingRef.current = signaling;
-
-      // Listen for ICE and connection state changes
-      pc.oniceconnectionstatechange = () => {
-        if (pc.iceConnectionState === 'failed') {
-          setStatus('error');
-          setErrorMessage('Koneksi P2P langsung gagal tersambung. Pastikan kedua perangkat berada di jaringan yang sama atau tidak terhalang firewall/VPN.');
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'failed') {
-          setStatus('error');
-          setErrorMessage('Jalur koneksi WebRTC terputus.');
-        }
-      };
-
-      // Listen for ICE candidates
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          signaling.send({
-            type: 'ice-candidate',
-            senderId: 'sender',
-            candidate: event.candidate.toJSON(),
-          });
-        }
-      };
-
-      // When DataChannel opens, begin file transmission
-      dc.onopen = async () => {
-        setStatus('transferring');
-        try {
-          await streamFilesOverDataChannel(
-            dc,
-            files,
-            (newMetrics) => {
-              setMetrics(newMetrics);
-            },
-            () => isCancelledRef.current
-          );
-
-          setStatus('completed');
-          try {
-            confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-          } catch {
-            // ignore
-          }
-          showToast('Transfer seluruh berkas berhasil diselesaikan!', 'success');
-        } catch (err: unknown) {
-          if (!isCancelledRef.current) {
-            const errText = err instanceof Error ? err.message : 'Koneksi transfer terputus.';
-            setErrorMessage(errText);
-            setStatus('error');
-          }
-        }
-      };
-
-      dc.onerror = () => {
-        if (!isCancelledRef.current) {
-          setErrorMessage('Terjadi kendala pada jalur data channel.');
-          setStatus('error');
-        }
-      };
-    } catch (err: unknown) {
-      const errText = err instanceof Error ? err.message : 'Gagal memulai sesi transfer.';
-      setErrorMessage(errText);
-      setStatus('error');
-    }
-  };
-
-  const handleCopyLink = () => {
-    const directUrl = `${window.location.origin}/receive?code=${roomCode}`;
-    navigator.clipboard.writeText(directUrl);
-    setCopiedLink(true);
-    showToast('Tautan terima berkas berhasil disalin!', 'success');
-    setTimeout(() => setCopiedLink(false), 2500);
-  };
+  }, [showQrModal]);
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
-      {/* 1. STATE: SELECTING FILES */}
-      {status === 'selecting' && (
-        <div className="space-y-6">
-          {/* Drag & Drop Upload Zone */}
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragging(false);
-              if (e.dataTransfer.files) handleAddFiles(e.dataTransfer.files);
-            }}
-            onClick={() => fileInputRef.current?.click()}
-            className={`group relative border-2 border-dashed rounded-3xl p-10 sm:p-14 text-center cursor-pointer transition-all duration-300 flex flex-col items-center justify-center space-y-4 shadow-sm backdrop-blur-sm ${
-              isDragging
-                ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 scale-[0.99]'
-                : 'border-slate-300 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-900/90'
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => e.target.files && handleAddFiles(e.target.files)}
-            />
+      {/* Hidden File Input Triggered on Peer Click */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        onChange={handleFileChange}
+        className="hidden"
+        id="send-studio-file-input"
+      />
 
-            <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center group-hover:scale-110 group-hover:bg-blue-500/20 transition-transform duration-300 shadow-inner">
-              <UploadCloud className="w-10 h-10" />
-            </div>
-
-            <div className="space-y-1">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white tracking-wide">
-                Pilih Berkas atau <span className="text-blue-600 dark:text-blue-400 underline underline-offset-4">Tarik ke Sini</span>
-              </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Mendukung semua format berkas (Video, Dokumen, Foto, ZIP, dll.) • Hingga 10 GB
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs text-slate-600 dark:text-slate-400">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> Langsung Antarperangkat (P2P)
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                <Sparkles className="w-3.5 h-3.5 text-blue-500" /> Tanpa Simpan di Server
-              </span>
-            </div>
-          </div>
-
-          {/* Selected Files List & Action Panel */}
-          {files.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 animate-in fade-in">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900 dark:text-white text-sm">
-                    Berkas Terpilih ({files.length})
-                  </span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold font-mono">
-                    Total: {formatBytes(totalSize)}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-500 transition-colors"
-                  >
-                    + Tambah Berkas
-                  </button>
-                  <span className="text-slate-300 dark:text-slate-700">|</span>
-                  <button
-                    type="button"
-                    onClick={handleClearFiles}
-                    className="text-xs font-semibold text-red-500 hover:text-red-400 transition-colors"
-                  >
-                    Hapus Semua
-                  </button>
-                </div>
-              </div>
-
-              {/* Scrollable File Items */}
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {files.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3 truncate">
-                      <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                        <File className="w-4 h-4" />
-                      </div>
-                      <div className="truncate text-xs">
-                        <div className="font-semibold text-slate-900 dark:text-white truncate">
-                          {item.name}
-                        </div>
-                        <div className="text-[11px] text-slate-500 font-mono">
-                          {formatBytes(item.size)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFile(item.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                      title="Hapus berkas ini"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Start Transfer Button */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={handleStartTransfer}
-                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-sm shadow-xl shadow-blue-500/20 hover:shadow-blue-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Share2 className="w-4 h-4" />
-                  Mulai Transfer Berkas ({files.length} Berkas • {formatBytes(totalSize)})
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+      {/* Incoming Transfer Prompt Modal */}
+      {incomingRequest && (
+        <IncomingTransferModal
+          senderName={incomingRequest.senderName}
+          files={incomingRequest.files}
+          onAccept={handleAcceptIncoming}
+          onReject={handleRejectIncoming}
+        />
       )}
 
-      {/* 2. STATE: WAITING FOR RECEIVER (Room Code & QR Code) */}
-      {(status === 'waiting_for_receiver' || status === 'receiver_connected') && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl text-center space-y-6 animate-in zoom-in-95">
-          <div className="max-w-md mx-auto space-y-2">
-            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-              Hubungkan Perangkat Penerima
+      {/* 1. STATE: RADAR (IDLE) */}
+      {status === 'idle' && (
+        <LocalWifiRadar
+          myPeer={myPeer}
+          peers={nearbyPeers}
+          onSelectPeer={handleSelectPeerToTarget}
+          onShowQr={() => setShowQrModal(true)}
+        />
+      )}
+
+      {/* 2. STATE: WAITING FOR RECEIVER TO ACCEPT */}
+      {status === 'waiting_for_receiver' && targetPeer && (
+        <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-6 max-w-lg mx-auto shadow-xl animate-in zoom-in-95">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
+            <RefreshCw className="w-8 h-8 animate-spin" />
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+              Menunggu Konfirmasi Penerima...
             </h3>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Buka <strong className="text-blue-600 dark:text-blue-400">nextbyte.biz.id/receive</strong> pada perangkat penerima, lalu masukkan kode berikut:
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Permintaan transfer telah dikirim ke <strong>{targetPeer.name}</strong>. Silakan klik tombol{' '}
+              <strong>Terima</strong> di layar penerima.
             </p>
           </div>
 
-          {/* Big Transfer Code Display */}
-          <div className="flex flex-col items-center justify-center gap-3">
-            <div className="px-6 py-3 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border-2 border-blue-500/30 text-3xl sm:text-4xl font-extrabold font-mono tracking-widest text-blue-600 dark:text-blue-400 shadow-inner select-all">
-              {roomCode}
-            </div>
-
-            <button
-              type="button"
-              onClick={handleCopyLink}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
-            >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedLink ? 'Tautan Disalin!' : 'Salin Tautan Penerima'}
-            </button>
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
+            {filesToSend.length} berkas dipilih ({formatBytes(metrics.totalBytes)})
           </div>
 
-          {/* QR Code Container */}
-          <div className="flex flex-col items-center justify-center gap-2 pt-2">
-            <div className="p-4 rounded-2xl bg-white border border-slate-200 dark:border-slate-700 shadow-md">
-              <div ref={qrContainerRef} className="w-[180px] h-[180px] flex items-center justify-center" />
-            </div>
-            <span className="text-xs text-slate-400 flex items-center gap-1">
-              <QrCode className="w-3.5 h-3.5" /> Pindai dengan kamera smartphone untuk langsung terhubung
-            </span>
-          </div>
-
-          {/* Connection Status Box */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs">
-            {status === 'waiting_for_receiver' ? (
-              <div className="flex items-center justify-center gap-2 text-slate-600 dark:text-slate-300">
-                <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
-                <span>Menunggu perangkat penerima memasukkan kode...</span>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Penerima terhubung!</span>
-                {receiverDevice && <DeviceBadge device={receiverDevice} />}
-                <span className="text-slate-500 font-normal">Menunggu persetujuan penerima...</span>
-              </div>
-            )}
-          </div>
-
-          {/* Cancel Button */}
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={handleCancelTransfer}
-              className="text-xs text-slate-400 hover:text-red-500 transition-colors"
-            >
-              Batalkan Sesi Transfer
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleCancelTransfer}
+            className="text-xs text-red-500 hover:text-red-600 font-semibold transition-colors"
+          >
+            Batalkan Pengiriman
+          </button>
         </div>
       )}
 
@@ -568,7 +622,7 @@ export function SendStudio() {
         <TransferProgressCard
           metrics={metrics}
           onCancel={handleCancelTransfer}
-          title={status === 'connecting' ? 'Menyiapkan Jalur P2P...' : 'Mentransfer Berkas ke Penerima...'}
+          title={status === 'connecting' ? 'Menyiapkan Jalur Wi-Fi P2P...' : 'Mentransfer Berkas Lewat Wi-Fi...'}
         />
       )}
 
@@ -584,93 +638,98 @@ export function SendStudio() {
               Transfer Berhasil Selesai!
             </h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Seluruh berkas telah terkirim sempurna ke perangkat penerima secara peer-to-peer.
+              Seluruh berkas telah terkirim sempurna secara peer-to-peer melalui jaringan Wi-Fi lokal.
             </p>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 max-w-sm mx-auto text-xs space-y-1.5">
-            <div className="flex justify-between text-slate-500">
-              <span>Jumlah Berkas:</span>
-              <strong className="text-slate-900 dark:text-white">{files.length} berkas</strong>
-            </div>
-            <div className="flex justify-between text-slate-500">
+            <div className="flex justify-between text-slate-500 dark:text-slate-400">
               <span>Total Ukuran:</span>
-              <strong className="text-slate-900 dark:text-white font-mono">{formatBytes(totalSize)}</strong>
+              <strong className="text-slate-900 dark:text-white">{formatBytes(metrics.totalBytes)}</strong>
             </div>
-            <div className="flex justify-between text-slate-500">
-              <span>Rata-rata Kecepatan:</span>
-              <strong className="text-blue-600 dark:text-blue-400 font-mono">
-                {formatBytes(metrics.speedBps)}/s
-              </strong>
+            <div className="flex justify-between text-slate-500 dark:text-slate-400">
+              <span>Kecepatan Rata-Rata:</span>
+              <strong className="text-slate-900 dark:text-white">{formatBytes(metrics.speedBps)}/s</strong>
             </div>
           </div>
 
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                cleanupConnections();
-                setFiles([]);
-                setStatus('selecting');
-              }}
-              className="px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-500/20 transition-all"
-            >
-              Kirim Berkas Lain
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleResetToRadar}
+            className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all"
+          >
+            Kirim Berkas Lainnya
+          </button>
         </div>
       )}
 
-      {/* 5. STATE: ERROR, CANCELLED, OR REJECTED */}
-      {(status === 'error' || status === 'cancelled' || status === 'rejected') && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center space-y-5 animate-in fade-in">
-          <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-7 h-7" />
+      {/* 5. STATE: ERROR */}
+      {status === 'error' && (
+        <div className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-3xl p-8 shadow-xl text-center space-y-4 max-w-lg mx-auto">
+          <div className="w-16 h-16 rounded-2xl bg-red-50 dark:bg-red-950/40 text-red-500 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-8 h-8" />
           </div>
-
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-              {status === 'rejected'
-                ? 'Penerima Menolak Transfer'
-                : status === 'cancelled'
-                ? 'Transfer Dibatalkan'
-                : 'Terjadi Kendala Koneksi'}
-            </h3>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Koneksi Terputus</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {errorMessage ||
-                (status === 'rejected'
-                  ? 'Perangkat penerima tidak menyetujui transfer berkas ini.'
-                  : 'Sesi transfer telah dihentikan.')}
+              {errorMessage || 'Jalur transfer Wi-Fi terputus sebelum berkas selesai dikirim.'}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={handleResetToRadar}
+            className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors"
+          >
+            Kembali ke Radar
+          </button>
+        </div>
+      )}
 
-          <div>
+      {/* QR Code Modal for Phone Pairing */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Buka di Ponsel
+              </span>
+              <button
+                onClick={() => setShowQrModal(false)}
+                type="button"
+                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Scan dengan Kamera HP
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Pastikan HP Anda terhubung ke <strong>Wi-Fi yang sama</strong> dengan laptop ini.
+              </p>
+            </div>
+
+            {/* QR Canvas Container */}
+            <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm inline-block mx-auto">
+              <div ref={qrContainerRef} className="flex items-center justify-center" />
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Setelah halaman terbuka di HP, perangkat akan langsung muncul di radar.
+            </p>
+
             <button
+              onClick={() => setShowQrModal(false)}
               type="button"
-              onClick={() => {
-                cleanupConnections();
-                setStatus('selecting');
-              }}
-              className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs shadow transition-all"
+              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors"
             >
-              Coba Lagi
+              Tutup
             </button>
           </div>
         </div>
       )}
-
-      {/* Quick Switch to Receive Mode */}
-      <div className="text-center pt-2">
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          Ingin menerima berkas dari perangkat lain?{' '}
-          <Link
-            href="/receive"
-            className="text-blue-600 dark:text-blue-400 font-semibold hover:underline"
-          >
-            Masuk ke Halaman Terima (Receive) ➔
-          </Link>
-        </span>
-      </div>
     </div>
   );
 }

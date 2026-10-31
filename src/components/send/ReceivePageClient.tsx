@@ -13,12 +13,12 @@ import {
   Lock,
   RefreshCw,
 } from 'lucide-react';
-import { ReceiveStudio } from './ReceiveStudio';
+import { SendStudio } from './SendStudio';
 
 const FAQS = [
   {
     q: 'Bagaimana cara menerima berkas dari pengirim?',
-    a: 'Minta 6 karakter kode transfer dari pengirim (contoh: NB-9281) atau pindai kode QR yang tertera pada layar pengirim menggunakan kamera ponsel Anda. Setelah terhubung, klik "Terima & Simpan Berkas".',
+    a: 'Cukup buka halaman ini di perangkat Anda yang terhubung ke jaringan Wi-Fi yang sama dengan pengirim. Perangkat Anda akan otomatis muncul di radar pengirim. Saat pengirim memilih perangkat Anda, klik "Terima Berkas".',
   },
   {
     q: 'Di mana berkas yang diterima akan disimpan?',
@@ -26,11 +26,11 @@ const FAQS = [
   },
   {
     q: 'Apakah penerima bisa menolak transfer?',
-    a: 'Ya, Anda akan diperlihatkan daftar nama berkas, ukuran, dan jenis perangkat pengirim sebelum transfer dimulai. Anda bebas mengklik "Tolak Transfer" kapan saja.',
+    a: 'Ya, Anda akan diperlihatkan pop-up berisi daftar nama berkas, ukuran, dan jenis perangkat pengirim sebelum transfer dimulai. Anda bebas mengklik "Tolak" kapan saja.',
   },
   {
     q: 'Apakah transfer aman dari intipan jaringan Wi-Fi umum?',
-    a: 'Sangat aman. Jalur data WebRTC diproteksi dengan enkripsi DTLS (Datagram Transport Layer Security) standar militer langsung antar-browser, sehingga siapa pun di jaringan Wi-Fi umum tidak dapat membaca isi berkas Anda.',
+    a: 'Sangat aman. Jalur data dilindungi dengan enkripsi DTLS (Datagram Transport Layer Security) standar tinggi langsung antar-browser, sehingga siapa pun di jaringan Wi-Fi tidak dapat membaca isi berkas Anda.',
   },
 ];
 
@@ -38,7 +38,7 @@ function ReceiveStudioFallback() {
   return (
     <div className="w-full max-w-4xl mx-auto p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col items-center justify-center space-y-3">
       <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-      <span className="text-xs text-slate-500 font-medium">Memuat Halaman Terima Berkas...</span>
+      <span className="text-xs text-slate-500 font-medium">Menghubungkan ke Wi-Fi Lokal...</span>
     </div>
   );
 }
@@ -66,7 +66,7 @@ export function ReceivePageClient() {
         <div className="text-center space-y-4 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 text-blue-700 dark:text-blue-400 text-xs font-semibold">
             <DownloadCloud className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            Terima Berkas P2P Berkecepatan Penuh
+            Transfer Berkas Wi-Fi Lokal
           </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
             Terima Berkas{' '}
@@ -75,36 +75,23 @@ export function ReceivePageClient() {
             </span>
           </h1>
           <p className="text-base sm:text-lg text-slate-600 dark:text-zinc-400">
-            Dapatkan berkas ukuran besar secara langsung dari perangkat pengirim tanpa kompresi dan tanpa perantara server.
+            Dapatkan berkas ukuran besar secara langsung dari perangkat pengirim di Wi-Fi yang sama tanpa kompresi dan tanpa perantara server.
           </p>
-
-          {/* Quick Tabs: Kirim vs Terima */}
-          <div className="inline-flex items-center p-1 rounded-2xl bg-slate-200/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-inner mt-2">
-            <Link
-              href="/send"
-              className="px-5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-            >
-              Kirim Berkas
-            </Link>
-            <span className="px-5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm">
-              Terima Berkas
-            </span>
-          </div>
         </div>
 
-        {/* Studio Component wrapped in Suspense for useSearchParams */}
+        {/* Studio Component wrapped in Suspense */}
         <Suspense fallback={<ReceiveStudioFallback />}>
-          <ReceiveStudio />
+          <SendStudio />
         </Suspense>
 
         {/* Feature Highlights Grid */}
         <div className="pt-8 border-t border-slate-200 dark:border-zinc-800 space-y-6">
           <div className="text-center space-y-2">
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-              Keunggulan Penerimaan Berkas Nextbyte
+              Mengapa Memilih Nextbyte Send?
             </h2>
             <p className="text-sm text-slate-600 dark:text-zinc-400 max-w-2xl mx-auto">
-              Perlindungan privasi maksimal dan kenyamanan unduh berkecepatan tinggi.
+              Solusi berbagi berkas berukuran besar tercepat tanpa kompresi dan tanpa perantara pihak ketiga.
             </p>
           </div>
 
@@ -113,19 +100,19 @@ export function ReceivePageClient() {
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                 <Zap className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">Langsung Tersimpan</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">Direct Peer-to-Peer</h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                Data berkas yang masuk langsung dialirkan ke media penyimpanan lokal tanpa menunggu proses render lambat.
+                Berkas mengalir langsung antarperangkat melalui koneksi LAN Wi-Fi berkecepatan tinggi tanpa antrean upload cloud.
               </p>
             </div>
 
             <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 shadow-sm space-y-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <ShieldCheck className="w-5 h-5" />
+                <Lock className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">Kendali Persetujuan</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">Enkripsi DTLS Penuh</h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                Anda selalu memiliki kendali penuh untuk meninjau nama & ukuran berkas sebelum memutuskan menerima atau menolak.
+                Seluruh jalur transfer data terlindungi enkripsi kriptografis tingkat tinggi. Hanya Anda dan pengirim yang memiliki kuncinya.
               </p>
             </div>
 
@@ -133,66 +120,63 @@ export function ReceivePageClient() {
               <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
                 <Monitor className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">Tanpa Aplikasi</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">Universal Lintas OS</h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                Cukup buka tautan di browser bawaan ponsel atau komputer. Tidak perlu mengunduh aplikasi tambahan apa pun.
+                AirDrop untuk semua platform. Bekerja mulus antar Windows, Android, macOS, iOS, dan Linux tanpa instalasi aplikasi.
               </p>
             </div>
 
             <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 shadow-sm space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <Lock className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">Terenkripsi Ujung ke Ujung</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">Penyimpanan Streaming</h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                Jalur koneksi langsung antara peramban Anda dan pengirim dilindungi enkripsi aman (WebRTC DTLS).
+                Dukungan File System Access API yang mengalirkan berkas besar langsung ke harddisk penerima tanpa membebani RAM browser.
               </p>
             </div>
           </div>
         </div>
 
-        {/* FAQ Section */}
-        <div className="space-y-6 pt-4">
+        {/* FAQ Accordion Section */}
+        <div className="pt-6 border-t border-slate-200 dark:border-zinc-800 space-y-6 max-w-3xl mx-auto">
           <div className="text-center space-y-2">
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
+              <HelpCircle className="w-3.5 h-3.5" />
+              Pertanyaan Umum
+            </div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-              Pertanyaan yang Sering Diajukan (FAQ)
+              Seputar Penerimaan Berkas
             </h2>
-            <p className="text-sm text-slate-600 dark:text-zinc-400">
-              Pelajari selengkapnya tentang proses penerimaan berkas di NextByte Send.
-            </p>
           </div>
 
-          <div className="max-w-3xl mx-auto space-y-3">
-            {FAQS.map((faq, idx) => {
-              const isOpen = openFaq === idx;
-              return (
-                <div
-                  key={idx}
-                  className="rounded-xl bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 shadow-xs overflow-hidden transition-all"
+          <div className="space-y-3">
+            {FAQS.map((faq, idx) => (
+              <div
+                key={idx}
+                className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 overflow-hidden shadow-sm"
+              >
+                <button
+                  onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
+                  type="button"
+                  className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-4 transition-colors hover:bg-slate-50 dark:hover:bg-zinc-800/40"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setOpenFaq(isOpen ? null : idx)}
-                    className="w-full p-4 text-left flex items-center justify-between gap-4 text-sm font-semibold text-slate-800 dark:text-zinc-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                  >
-                    <span className="flex items-center gap-2">
-                      <HelpCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                      {faq.q}
-                    </span>
-                    <ChevronDown
-                      className={`w-4 h-4 text-slate-400 dark:text-zinc-400 shrink-0 transition-transform duration-200 ${
-                        isOpen ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''
-                      }`}
-                    />
-                  </button>
-                  {isOpen && (
-                    <div className="px-4 pb-4 pt-1 text-xs text-slate-600 dark:text-zinc-400 leading-relaxed border-t border-slate-100 dark:border-zinc-800/60">
-                      {faq.a}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  <span className="font-bold text-slate-900 dark:text-white text-sm sm:text-base">
+                    {faq.q}
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${
+                      openFaq === idx ? 'rotate-180 text-blue-500' : ''
+                    }`}
+                  />
+                </button>
+                {openFaq === idx && (
+                  <div className="px-4 pb-5 sm:px-5 text-xs sm:text-sm text-slate-600 dark:text-zinc-400 leading-relaxed border-t border-slate-100 dark:border-zinc-800/60 pt-3">
+                    {faq.a}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>

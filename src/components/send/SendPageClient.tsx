@@ -72,17 +72,10 @@ export function SendPageClient() {
             Kirim foto, video besar, atau dokumen langsung dari browser Anda ke perangkat lain tanpa batas ukuran, tanpa login, dan tanpa disimpan di server.
           </p>
 
-          {/* Quick Tabs: Kirim vs Terima */}
-          <div className="inline-flex items-center p-1 rounded-2xl bg-slate-200/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-inner mt-2">
-            <span className="px-5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm">
-              Kirim Berkas
-            </span>
-            <Link
-              href="/receive"
-              className="px-5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-            >
-              Terima Berkas
-            </Link>
+          {/* Wi-Fi Mode Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-semibold mt-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Mode Wi-Fi Lokal Aktif • Auto-Detect Tanpa Kode
           </div>
         </div>
 

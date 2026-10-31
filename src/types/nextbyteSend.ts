@@ -6,6 +6,15 @@ export interface DeviceInfo {
   deviceType: DeviceType;
 }
 
+export interface LocalPeer {
+  id: string;
+  name: string;
+  deviceType: DeviceType;
+  os: string;
+  browser: string;
+  lastSeen: number;
+}
+
 export interface FileTransferItem {
   id: string;
   name: string;
@@ -53,6 +62,7 @@ export interface SignalingMessage {
     | 'complete-transfer'
     | 'error';
   senderId: string;
+  targetId?: string;
   deviceInfo?: DeviceInfo;
   files?: Array<{ id: string; name: string; size: number; type: string }>;
   sdp?: RTCSessionDescriptionInit;
