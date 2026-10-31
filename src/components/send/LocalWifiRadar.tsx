@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Laptop,
   Smartphone,
@@ -10,22 +10,32 @@ import {
   QrCode,
   Send,
   Radio,
+  KeyRound,
+  ArrowRight,
 } from 'lucide-react';
 import { LocalPeer } from '@/types/nextbyteSend';
 
 interface LocalWifiRadarProps {
   myPeer: LocalPeer | null;
   peers: LocalPeer[];
+  roomPin: string;
+  activeRoom: string | null;
   onSelectPeer: (peer: LocalPeer) => void;
   onShowQr: () => void;
+  onJoinPin: (pin: string) => void;
 }
 
 export function LocalWifiRadar({
   myPeer,
   peers,
+  roomPin,
+  activeRoom,
   onSelectPeer,
   onShowQr,
+  onJoinPin,
 }: LocalWifiRadarProps) {
+  const [pinInput, setPinInput] = useState('');
+
   const getDeviceIcon = (type: LocalPeer['deviceType'], className = 'w-6 h-6') => {
     switch (type) {
       case 'mobile':
@@ -37,9 +47,17 @@ export function LocalWifiRadar({
     }
   };
 
+  const handlePinSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinInput.trim()) {
+      onJoinPin(pinInput.trim().toUpperCase());
+      setPinInput('');
+    }
+  };
+
   return (
-    <div className="w-full space-y-8 animate-in fade-in duration-300">
-      {/* Top Bar: My Device Status */}
+    <div className="w-full space-y-6 animate-in fade-in duration-300">
+      {/* Top Bar: My Device Status & Pairing Info */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
@@ -48,7 +66,7 @@ export function LocalWifiRadar({
           <div>
             <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Perangkat Anda (Aktif di Wi-Fi)
+              Perangkat Anda {activeRoom ? `(Grup: ${activeRoom})` : '(Wi-Fi Hotspot)'}
             </div>
             <div className="text-sm font-bold text-slate-900 dark:text-white">
               {myPeer?.name || 'Mendeteksi perangkat...'}
@@ -56,14 +74,20 @@ export function LocalWifiRadar({
           </div>
         </div>
 
-        <button
-          onClick={onShowQr}
-          type="button"
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-all"
-        >
-          <QrCode className="w-4 h-4 text-blue-500" />
-          Buka di HP (Scan QR)
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            PIN: <span className="text-blue-600 dark:text-blue-400 text-sm tracking-wider">{roomPin}</span>
+          </div>
+
+          <button
+            onClick={onShowQr}
+            type="button"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all"
+          >
+            <QrCode className="w-4 h-4" />
+            Hubungkan HP (Scan QR)
+          </button>
+        </div>
       </div>
 
       {/* Main Radar / Nearby Devices Section */}
@@ -73,13 +97,13 @@ export function LocalWifiRadar({
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-200/60 dark:border-emerald-800">
                 <Sparkles className="w-3.5 h-3.5" />
-                {peers.length} Perangkat Ditemukan di Wi-Fi Ini
+                {peers.length} Perangkat Terhubung
               </div>
               <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
                 Pilih Perangkat untuk Mengirim Berkas
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Klik ikon perangkat yang ingin Anda kirimi file.
+                Klik ikon perangkat di bawah untuk mulai mengirim berkas secara instan.
               </p>
             </div>
 
@@ -112,9 +136,8 @@ export function LocalWifiRadar({
           </div>
         ) : (
           /* Empty State: Radar animation waiting for second device */
-          <div className="max-w-md mx-auto space-y-6 py-4">
+          <div className="max-w-md mx-auto space-y-6 py-2">
             <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
-              {/* Radar pulse rings */}
               <div className="absolute inset-0 rounded-full bg-blue-500/10 animate-ping opacity-75" />
               <div className="absolute inset-2 rounded-full bg-blue-500/15 animate-pulse" />
               <div className="relative w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-xl shadow-blue-500/30">
@@ -124,22 +147,49 @@ export function LocalWifiRadar({
 
             <div className="space-y-2">
               <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
-                Mencari Perangkat di Jaringan Wi-Fi...
+                Mencari Perangkat di Jaringan Hotspot / Wi-Fi...
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                Buka halaman ini di HP, tablet, atau laptop lain yang tersambung ke <strong>Wi-Fi yang sama</strong>. Perangkat akan otomatis terdeteksi di sini.
+                Scan QR Code di bawah dengan kamera HP Anda untuk menghubungkan secara instan.
               </p>
             </div>
 
-            <div className="pt-2">
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
               <button
                 onClick={onShowQr}
                 type="button"
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all"
               >
                 <QrCode className="w-4 h-4" />
-                Tampilkan QR Code untuk HP
+                Scan QR dari HP
               </button>
+            </div>
+
+            {/* Quick PIN Input for Mobile or Laptop */}
+            <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
+              <form onSubmit={handlePinSubmit} className="flex items-center justify-center gap-2 max-w-xs mx-auto">
+                <div className="relative flex-1">
+                  <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="Masukkan PIN 4-Digit"
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono uppercase text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={!pinInput.trim()}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold transition-all disabled:opacity-40"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </form>
+              <div className="text-[11px] text-slate-400 mt-2">
+                PIN Anda saat ini: <strong className="font-mono text-blue-600 dark:text-blue-400">{roomPin}</strong>
+              </div>
             </div>
           </div>
         )}

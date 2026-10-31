@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import {
+  RefreshCw,
   ChevronRight,
   Share2,
   ShieldCheck,
@@ -36,6 +37,15 @@ const FAQS = [
     a: 'Sangat bisa. Nextbyte Send dirancang universal untuk semua peramban modern (Chrome, Edge, Safari, Firefox) di Windows, macOS, Android, iOS, dan Linux tanpa memerlukan aplikasi tambahan.',
   },
 ];
+
+function SendStudioFallback() {
+  return (
+    <div className="w-full max-w-4xl mx-auto p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col items-center justify-center space-y-3">
+      <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+      <span className="text-xs text-slate-500 font-medium">Menghubungkan ke Wi-Fi Lokal...</span>
+    </div>
+  );
+}
 
 export function SendPageClient() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -80,7 +90,9 @@ export function SendPageClient() {
         </div>
 
         {/* Studio Component */}
-        <SendStudio />
+        <Suspense fallback={<SendStudioFallback />}>
+          <SendStudio />
+        </Suspense>
 
         {/* Feature Highlights Grid */}
         <div className="pt-8 border-t border-slate-200 dark:border-zinc-800 space-y-6">

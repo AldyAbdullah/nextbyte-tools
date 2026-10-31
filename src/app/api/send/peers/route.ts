@@ -2,19 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'crypto';
 import { LocalPeer } from '@/types/nextbyteSend';
 
-// In-memory store of peers per Wi-Fi network
-// Key: networkId (hashed public IP), Value: Map of peerId -> LocalPeer
+// In-memory store of peers per Wi-Fi network or custom room
+// Key: networkId (hashed public IP subnet or custom room code), Value: Map of peerId -> LocalPeer
 const networkRooms = new Map<string, Map<string, LocalPeer>>();
 
 function getNetworkId(req: NextRequest): string {
   const forwarded = req.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'local_dev_network';
+  let ip = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'local_dev_network';
+
+  // Normalize IPv6 to /64 subnet prefix (crucial for mobile hotspot tethering)
+  if (ip.includes(':')) {
+    const segments = ip.split(':').filter(Boolean);
+    ip = segments.slice(0, 4).join(':');
+  }
+
   return 'wifi_' + createHash('sha256').update(ip).digest('hex').substring(0, 16);
 }
 
 function cleanupStalePeers(peersMap: Map<string, LocalPeer>) {
   const now = Date.now();
-  const maxAge = 6000; // 6 seconds timeout for heartbeat
+  const maxAge = 8000; // 8 seconds timeout for heartbeat
   for (const [id, peer] of peersMap.entries()) {
     if (now - peer.lastSeen > maxAge) {
       peersMap.delete(id);
@@ -24,13 +31,19 @@ function cleanupStalePeers(peersMap: Map<string, LocalPeer>) {
 
 export async function POST(req: NextRequest) {
   try {
-    const networkId = getNetworkId(req);
     const body = await req.json();
     const peer = body.peer as LocalPeer;
+    const customRoom = body.roomId as string | undefined;
 
     if (!peer || !peer.id) {
       return NextResponse.json({ error: 'Missing peer data' }, { status: 400 });
     }
+
+    // If a custom room is specified (e.g. from QR / PIN), prioritize it.
+    // Otherwise fallback to automatic Wi-Fi subnet signature.
+    const networkId = customRoom && customRoom.trim()
+      ? `room_${customRoom.trim().toUpperCase()}`
+      : getNetworkId(req);
 
     let peersMap = networkRooms.get(networkId);
     if (!peersMap) {
@@ -44,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     cleanupStalePeers(peersMap);
 
-    // Filter out calling peer to return only other peers on the same Wi-Fi
+    // Filter out calling peer to return only other peers in the room
     const otherPeers: LocalPeer[] = [];
     for (const [id, p] of peersMap.entries()) {
       if (id !== peer.id) {
@@ -64,9 +77,13 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const networkId = getNetworkId(req);
     const { searchParams } = new URL(req.url);
     const peerId = searchParams.get('peerId');
+    const customRoom = searchParams.get('roomId');
+
+    const networkId = customRoom
+      ? `room_${customRoom.trim().toUpperCase()}`
+      : getNetworkId(req);
 
     if (peerId) {
       const peersMap = networkRooms.get(networkId);

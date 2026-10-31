@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
   X,
+  Copy,
+  Check,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -28,8 +31,14 @@ import { useToast } from '@/components/common/Toast';
 
 export function SendStudio() {
   const { showToast } = useToast();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrContainerRef = useRef<HTMLDivElement>(null);
+
+  // Room pairing: random 4-digit PIN for this device, or joined room from URL
+  const [roomPin] = useState<string>(() => Math.floor(1000 + Math.random() * 9000).toString());
+  const [activeRoom, setActiveRoom] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Local Peer identification
   const [myPeer, setMyPeer] = useState<LocalPeer | null>(null);
@@ -66,6 +75,14 @@ export function SendStudio() {
     currentFileName: '',
     elapsedSeconds: 0,
   });
+
+  // Check URL room param (from QR scan)
+  useEffect(() => {
+    const urlRoom = searchParams.get('room');
+    if (urlRoom) {
+      setActiveRoom(urlRoom.toUpperCase());
+    }
+  }, [searchParams]);
 
   // 1. Initialize self peer
   useEffect(() => {
@@ -105,17 +122,22 @@ export function SendStudio() {
     };
   }, [cleanupConnections]);
 
-  // 2. Heartbeat to discover peers on the same Wi-Fi
+  // 2. Heartbeat to discover peers on the same Wi-Fi or Room PIN
   useEffect(() => {
     if (!myPeer) return;
 
     let isMounted = true;
+    const currentRoomToSync = activeRoom || roomPin;
+
     const syncPeers = async () => {
       try {
         const res = await fetch('/api/send/peers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ peer: myPeer }),
+          body: JSON.stringify({
+            peer: myPeer,
+            roomId: currentRoomToSync,
+          }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -129,15 +151,16 @@ export function SendStudio() {
     };
 
     syncPeers();
-    const interval = setInterval(syncPeers, 1200);
+    const interval = setInterval(syncPeers, 1000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
-      // Notify server we left
-      fetch(`/api/send/peers?peerId=${myPeer.id}`, { method: 'DELETE' }).catch(() => {});
+      fetch(`/api/send/peers?peerId=${myPeer.id}&roomId=${currentRoomToSync}`, {
+        method: 'DELETE',
+      }).catch(() => {});
     };
-  }, [myPeer]);
+  }, [myPeer, activeRoom, roomPin]);
 
   // 3. Signaling Polling for incoming signals
   useEffect(() => {
@@ -163,7 +186,7 @@ export function SendStudio() {
       }
     };
 
-    const interval = setInterval(pollSignals, 350);
+    const interval = setInterval(pollSignals, 300);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -193,7 +216,6 @@ export function SendStudio() {
     if (!myPeer) return;
 
     if (msg.type === 'file-list') {
-      // Incoming request from another device!
       const senderName = msg.deviceInfo ? getFriendlyDeviceName(msg.deviceInfo) : 'Perangkat Wi-Fi';
       setIncomingRequest({
         senderId: msg.senderId,
@@ -201,7 +223,6 @@ export function SendStudio() {
         files: msg.files || [],
       });
     } else if (msg.type === 'accept-transfer') {
-      // Receiver accepted our files! Begin WebRTC Offer
       setStatus('connecting');
       if (peerConnectionRef.current) {
         try {
@@ -217,11 +238,9 @@ export function SendStudio() {
         }
       }
     } else if (msg.type === 'offer') {
-      // Receiver received offer -> set remote description and create answer
       if (peerConnectionRef.current && msg.sdp) {
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
 
-        // Flush queued candidates
         while (iceCandidateQueueRef.current.length > 0) {
           const cand = iceCandidateQueueRef.current.shift();
           if (cand) {
@@ -243,11 +262,9 @@ export function SendStudio() {
         });
       }
     } else if (msg.type === 'answer') {
-      // Sender received answer
       if (peerConnectionRef.current && msg.sdp) {
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
 
-        // Flush queued candidates
         while (iceCandidateQueueRef.current.length > 0) {
           const cand = iceCandidateQueueRef.current.shift();
           if (cand) {
@@ -279,7 +296,7 @@ export function SendStudio() {
     } else if (msg.type === 'cancel-transfer') {
       setStatus('cancelled');
       cleanupConnections();
-      showToast('Transfer dibatalkan oleh perangkat lain.', 'info');
+      showToast('Transfer dibatalkan.', 'info');
     }
   };
 
@@ -324,7 +341,6 @@ export function SendStudio() {
       elapsedSeconds: 0,
     });
 
-    // Setup WebRTC Sender
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -351,7 +367,7 @@ export function SendStudio() {
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'failed') {
         setStatus('error');
-        setErrorMessage('Koneksi P2P langsung Wi-Fi gagal tersambung. Pastikan kedua perangkat tersambung ke Wi-Fi yang sama.');
+        setErrorMessage('Koneksi P2P langsung Wi-Fi gagal tersambung.');
       }
     };
 
@@ -469,7 +485,6 @@ export function SendStudio() {
       receiverCancelRef.current = handle.cancel;
     };
 
-    // Notify sender we accepted
     await sendSignal(senderId, {
       type: 'accept-transfer',
       senderId: myPeer.id,
@@ -504,7 +519,6 @@ export function SendStudio() {
     showToast('Transfer dibatalkan.', 'info');
   };
 
-  // Reset to radar idle state
   const handleResetToRadar = () => {
     cleanupConnections();
     setStatus('idle');
@@ -512,13 +526,29 @@ export function SendStudio() {
     setFilesToSend([]);
   };
 
-  // Render QR Code in modal
+  const handleJoinPin = (pin: string) => {
+    setActiveRoom(pin);
+    showToast(`Bergabung ke grup PIN: ${pin}`, 'success');
+  };
+
+  const pairUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/send?room=${activeRoom || roomPin}`
+    : '';
+
+  const handleCopyPairLink = () => {
+    if (pairUrl) {
+      navigator.clipboard.writeText(pairUrl);
+      setCopiedLink(true);
+      showToast('Tautan pairing berhasil disalin!', 'success');
+      setTimeout(() => setCopiedLink(false), 2500);
+    }
+  };
+
+  // Render QR Code in modal pointing directly to active pairing room
   useEffect(() => {
-    if (!showQrModal || !qrContainerRef.current) return;
+    if (!showQrModal || !qrContainerRef.current || !pairUrl) return;
 
     let isMounted = true;
-    const directUrl = `${window.location.origin}/send`;
-
     async function renderQr() {
       try {
         const QRCodeStyling = (await import('qr-code-styling')).default;
@@ -528,7 +558,7 @@ export function SendStudio() {
         const qr = new QRCodeStyling({
           width: 200,
           height: 200,
-          data: directUrl,
+          data: pairUrl,
           dotsOptions: {
             color: '#2563eb',
             type: 'rounded',
@@ -552,7 +582,7 @@ export function SendStudio() {
     return () => {
       isMounted = false;
     };
-  }, [showQrModal]);
+  }, [showQrModal, pairUrl]);
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -581,8 +611,11 @@ export function SendStudio() {
         <LocalWifiRadar
           myPeer={myPeer}
           peers={nearbyPeers}
+          roomPin={activeRoom || roomPin}
+          activeRoom={activeRoom}
           onSelectPeer={handleSelectPeerToTarget}
           onShowQr={() => setShowQrModal(true)}
+          onJoinPin={handleJoinPin}
         />
       )}
 
@@ -691,7 +724,7 @@ export function SendStudio() {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Buka di Ponsel
+                Hubungkan Ponsel Hotspot
               </span>
               <button
                 onClick={() => setShowQrModal(false)}
@@ -707,7 +740,7 @@ export function SendStudio() {
                 Scan dengan Kamera HP
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pastikan HP Anda terhubung ke <strong>Wi-Fi yang sama</strong> dengan laptop ini.
+                Arahkan kamera HP Anda ke QR Code di bawah untuk menghubungkan langsung:
               </p>
             </div>
 
@@ -716,16 +749,20 @@ export function SendStudio() {
               <div ref={qrContainerRef} className="flex items-center justify-center" />
             </div>
 
-            <p className="text-[11px] text-slate-400">
-              Setelah halaman terbuka di HP, perangkat akan langsung muncul di radar.
-            </p>
+            <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs space-y-1">
+              <div className="text-slate-500 dark:text-slate-400">Atau ketik PIN 4-digit di HP:</div>
+              <div className="text-xl font-bold font-mono tracking-widest text-blue-600 dark:text-blue-400">
+                {activeRoom || roomPin}
+              </div>
+            </div>
 
             <button
-              onClick={() => setShowQrModal(false)}
+              onClick={handleCopyPairLink}
               type="button"
-              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors"
+              className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2"
             >
-              Tutup
+              {copiedLink ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              {copiedLink ? 'Tautan Disalin!' : 'Salin Tautan Pairing'}
             </button>
           </div>
         </div>
