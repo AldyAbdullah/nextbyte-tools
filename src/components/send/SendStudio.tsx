@@ -15,7 +15,6 @@ import {
   FileTransferItem,
   TransferStatus,
   TransferMetrics,
-  SignalingMessage,
   LocalPeer,
 } from '@/types/nextbyteSend';
 import {
@@ -26,7 +25,7 @@ import {
 import { LocalWifiRadar } from './LocalWifiRadar';
 import { IncomingTransferModal } from './IncomingTransferModal';
 import { TransferProgressCard } from './TransferProgressCard';
-import { streamFilesOverDataChannel, setupDataChannelReceiver } from '@/lib/webrtc/dataChannelTransfer';
+import { createFileReceiverHandle, FileReceiverHandle } from '@/lib/webrtc/streamingStorage';
 import { useToast } from '@/components/common/Toast';
 
 export function SendStudio() {
@@ -35,13 +34,16 @@ export function SendStudio() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrContainerRef = useRef<HTMLDivElement>(null);
 
-  // Room pairing: random 4-digit PIN for this device, or joined room from URL
-  const [roomPin] = useState<string>(() => Math.floor(1000 + Math.random() * 9000).toString());
+  // Room / PIN pairing: 4-digit PIN for this device, or joined PIN from URL
+  const [roomPin, setRoomPin] = useState<string>(() =>
+    Math.floor(1000 + Math.random() * 9000).toString()
+  );
   const [activeRoom, setActiveRoom] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Local Peer identification
   const [myPeer, setMyPeer] = useState<LocalPeer | null>(null);
+  const myPeerRef = useRef<LocalPeer | null>(null);
   const [nearbyPeers, setNearbyPeers] = useState<LocalPeer[]>([]);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
 
@@ -52,17 +54,23 @@ export function SendStudio() {
     senderId: string;
     senderName: string;
     files: Array<{ id: string; name: string; size: number; type: string }>;
+    totalBytes: number;
   } | null>(null);
 
   const [status, setStatus] = useState<TransferStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // WebRTC references
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  // PeerJS and connection references
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const peerInstanceRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const connectionsRef = useRef<Map<string, any>>(new Map());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeConnRef = useRef<any>(null);
+  const currentHandleRef = useRef<FileReceiverHandle | null>(null);
   const isCancelledRef = useRef<boolean>(false);
-  const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
-  const receiverCancelRef = useRef<(() => void) | null>(null);
+  const expectedTotalBytesRef = useRef<number>(0);
+  const receiverBytesRef = useRef<number>(0);
 
   const [metrics, setMetrics] = useState<TransferMetrics>({
     bytesTransferred: 0,
@@ -76,11 +84,16 @@ export function SendStudio() {
     elapsedSeconds: 0,
   });
 
-  // Check URL room param (from QR scan)
+  // Keep myPeerRef in sync
   useEffect(() => {
-    const urlRoom = searchParams.get('room');
-    if (urlRoom) {
-      setActiveRoom(urlRoom.toUpperCase());
+    myPeerRef.current = myPeer;
+  }, [myPeer]);
+
+  // Check URL pin/room param (e.g. from QR scan)
+  useEffect(() => {
+    const urlPin = searchParams.get('pin') || searchParams.get('room');
+    if (urlPin) {
+      setActiveRoom(urlPin.toUpperCase());
     }
   }, [searchParams]);
 
@@ -99,208 +112,404 @@ export function SendStudio() {
     setMyPeer(peer);
   }, []);
 
-  // Cleanup WebRTC connection
-  const cleanupConnections = useCallback(() => {
-    if (receiverCancelRef.current) {
-      receiverCancelRef.current();
-      receiverCancelRef.current = null;
+  // Cleanup active file handle
+  const cleanupTransfer = useCallback(() => {
+    if (currentHandleRef.current) {
+      currentHandleRef.current.cancel();
+      currentHandleRef.current = null;
     }
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
-    }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    iceCandidateQueueRef.current = [];
   }, []);
 
   useEffect(() => {
     return () => {
-      cleanupConnections();
-    };
-  }, [cleanupConnections]);
-
-  // 2. Heartbeat to discover peers on the same Wi-Fi or Room PIN
-  useEffect(() => {
-    if (!myPeer) return;
-
-    let isMounted = true;
-    const currentRoomToSync = activeRoom || roomPin;
-
-    const syncPeers = async () => {
-      try {
-        const res = await fetch('/api/send/peers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            peer: myPeer,
-            roomId: currentRoomToSync,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && Array.isArray(data.peers)) {
-            setNearbyPeers(data.peers);
-          }
-        }
-      } catch {
-        // silent transient network glitch
+      cleanupTransfer();
+      if (peerInstanceRef.current) {
+        peerInstanceRef.current.destroy();
+        peerInstanceRef.current = null;
       }
     };
+  }, [cleanupTransfer]);
 
-    syncPeers();
-    const interval = setInterval(syncPeers, 1000);
+  // Setup event listeners on a PeerJS DataConnection
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setupConnection = useCallback((conn: any) => {
+    connectionsRef.current.set(conn.peer, conn);
 
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-      fetch(`/api/send/peers?peerId=${myPeer.id}&roomId=${currentRoomToSync}`, {
-        method: 'DELETE',
-      }).catch(() => {});
-    };
-  }, [myPeer, activeRoom, roomPin]);
+    conn.on('open', () => {
+      // Exchange self device info
+      if (myPeerRef.current) {
+        conn.send({
+          type: 'PEER_INFO',
+          peer: myPeerRef.current,
+        });
+      }
+    });
 
-  // 3. Signaling Polling for incoming signals
-  useEffect(() => {
-    if (!myPeer) return;
+    // Receiver speed calculation references
+    let lastSpeedTime = Date.now();
+    let lastSpeedBytes = 0;
 
-    let isMounted = true;
-    let lastTs = Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    conn.on('data', async (data: any) => {
+      if (!data || typeof data !== 'object') return;
 
-    const pollSignals = async () => {
-      try {
-        const res = await fetch(`/api/send/signal?peerId=${myPeer.id}&since=${lastTs}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && Array.isArray(data.messages) && data.messages.length > 0) {
-            lastTs = data.latestTimestamp || lastTs;
-            for (const msg of data.messages) {
-              await handleSignalingMessage(msg);
+      switch (data.type) {
+        case 'PEER_INFO': {
+          if (data.peer) {
+            const remotePeer: LocalPeer = {
+              ...data.peer,
+              id: conn.peer,
+              lastSeen: Date.now(),
+            };
+            setNearbyPeers((prev) => {
+              const filtered = prev.filter((p) => p.id !== conn.peer);
+              return [...filtered, remotePeer];
+            });
+
+            // Send back our own peer info if not already sent
+            if (myPeerRef.current && !data.isReply) {
+              conn.send({
+                type: 'PEER_INFO',
+                peer: myPeerRef.current,
+                isReply: true,
+              });
             }
           }
+          break;
         }
-      } catch {
-        // ignore
-      }
-    };
 
-    const interval = setInterval(pollSignals, 300);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [myPeer]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Send signaling packet to target peer
-  const sendSignal = async (targetId: string, message: SignalingMessage) => {
-    if (!myPeer) return;
-    try {
-      await fetch('/api/send/signal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetPeerId: targetId,
-          fromPeerId: myPeer.id,
-          message,
-        }),
-      });
-    } catch (err) {
-      console.warn('Failed to dispatch signaling message:', err);
-    }
-  };
-
-  // 4. Handle incoming signaling messages
-  const handleSignalingMessage = async (msg: SignalingMessage) => {
-    if (!myPeer) return;
-
-    if (msg.type === 'file-list') {
-      const senderName = msg.deviceInfo ? getFriendlyDeviceName(msg.deviceInfo) : 'Perangkat Wi-Fi';
-      setIncomingRequest({
-        senderId: msg.senderId,
-        senderName,
-        files: msg.files || [],
-      });
-    } else if (msg.type === 'accept-transfer') {
-      setStatus('connecting');
-      if (peerConnectionRef.current) {
-        try {
-          const offer = await peerConnectionRef.current.createOffer();
-          await peerConnectionRef.current.setLocalDescription(offer);
-          await sendSignal(msg.senderId, {
-            type: 'offer',
-            senderId: myPeer.id,
-            sdp: offer,
+        case 'TRANSFER_REQUEST': {
+          activeConnRef.current = conn;
+          expectedTotalBytesRef.current = data.totalBytes || 0;
+          receiverBytesRef.current = 0;
+          setIncomingRequest({
+            senderId: conn.peer,
+            senderName: data.senderName || 'Perangkat Pengirim',
+            files: data.files || [],
+            totalBytes: data.totalBytes || 0,
           });
-        } catch (e) {
-          console.error('Failed to create offer:', e);
+          break;
         }
-      }
-    } else if (msg.type === 'offer') {
-      if (peerConnectionRef.current && msg.sdp) {
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
 
-        while (iceCandidateQueueRef.current.length > 0) {
-          const cand = iceCandidateQueueRef.current.shift();
-          if (cand) {
-            try {
-              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cand));
-            } catch (e) {
-              console.warn('Flushing candidate error:', e);
+        case 'TRANSFER_ACCEPT': {
+          // Sender receives acceptance from receiver -> start streaming files!
+          activeConnRef.current = conn;
+          startSendingFiles(conn);
+          break;
+        }
+
+        case 'TRANSFER_REJECT': {
+          setStatus('rejected');
+          showToast('Penerima menolak transfer berkas.', 'info');
+          break;
+        }
+
+        case 'TRANSFER_CANCEL': {
+          isCancelledRef.current = true;
+          cleanupTransfer();
+          setStatus('cancelled');
+          showToast('Transfer dibatalkan.', 'info');
+          break;
+        }
+
+        case 'FILE_START': {
+          setMetrics((prev) => ({
+            ...prev,
+            currentFileName: data.name,
+            currentFileIndex: (data.index || 0) + 1,
+          }));
+          try {
+            currentHandleRef.current = await createFileReceiverHandle(
+              data.name,
+              data.mimeType || 'application/octet-stream'
+            );
+          } catch (err) {
+            console.warn('Gagal menyiapkan penyimpanan berkas:', err);
+          }
+          break;
+        }
+
+        case 'CHUNK': {
+          if (data.chunk) {
+            if (currentHandleRef.current) {
+              await currentHandleRef.current.writeChunk(data.chunk);
             }
+            receiverBytesRef.current += data.chunk.byteLength;
+            const total = expectedTotalBytesRef.current || 1;
+            const now = Date.now();
+            const timeDiffSec = (now - lastSpeedTime) / 1000;
+            let currentSpeed = 0;
+
+            if (timeDiffSec >= 0.25) {
+              const bytesDiff = receiverBytesRef.current - lastSpeedBytes;
+              currentSpeed = bytesDiff / timeDiffSec;
+              lastSpeedTime = now;
+              lastSpeedBytes = receiverBytesRef.current;
+            }
+
+            const remainingBytes = Math.max(0, total - receiverBytesRef.current);
+            const eta = currentSpeed > 0 ? remainingBytes / currentSpeed : 0;
+            const progressPercent = Math.min(
+              100,
+              Math.round((receiverBytesRef.current / total) * 100)
+            );
+
+            setMetrics((prev) => ({
+              ...prev,
+              bytesTransferred: receiverBytesRef.current,
+              totalBytes: total,
+              speedBps: currentSpeed || prev.speedBps,
+              timeRemainingSec: eta,
+              progressPercent,
+            }));
+          }
+          break;
+        }
+
+        case 'FILE_END': {
+          if (currentHandleRef.current) {
+            try {
+              await currentHandleRef.current.finish();
+            } catch (err) {
+              console.warn('Gagal menyelesaikan penulisan berkas:', err);
+            }
+            currentHandleRef.current = null;
+          }
+          break;
+        }
+
+        case 'TRANSFER_COMPLETE': {
+          setMetrics((prev) => ({
+            ...prev,
+            bytesTransferred: prev.totalBytes,
+            progressPercent: 100,
+            speedBps: 0,
+            timeRemainingSec: 0,
+          }));
+          setStatus('completed');
+          try {
+            confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+          } catch {}
+          showToast('Seluruh berkas berhasil diterima & disimpan!', 'success');
+          break;
+        }
+
+        default:
+          break;
+      }
+    });
+
+    conn.on('close', () => {
+      connectionsRef.current.delete(conn.peer);
+      setNearbyPeers((prev) => prev.filter((p) => p.id !== conn.peer));
+    });
+
+    conn.on('error', (err: unknown) => {
+      console.warn('Peer connection error:', err);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanupTransfer, showToast]);
+
+  // Connect to another peer by PeerJS ID (e.g. 'nb_4821')
+  const connectToPeer = useCallback(
+    (targetPeerId: string) => {
+      if (!peerInstanceRef.current || peerInstanceRef.current.destroyed) return;
+      const existing = connectionsRef.current.get(targetPeerId);
+      if (existing && existing.open) return existing;
+
+      try {
+        const conn = peerInstanceRef.current.connect(targetPeerId, { reliable: true });
+        setupConnection(conn);
+        return conn;
+      } catch (err) {
+        console.warn('Failed to connect to peer:', err);
+      }
+    },
+    [setupConnection]
+  );
+
+  // 2. Initialize PeerJS client instance
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let isMounted = true;
+
+    async function initPeer() {
+      try {
+        const { Peer } = await import('peerjs');
+        if (!isMounted) return;
+
+        // Determine our Peer ID:
+        // If user is joining another room PIN: use random client ID
+        // If user is host: use `nb_${roomPin}`
+        const targetPin = activeRoom;
+        const myPeerId = targetPin
+          ? `nb_client_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+          : `nb_${roomPin}`;
+
+        const peer = new Peer(myPeerId, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun.cloudflare.com:3478' },
+            ],
+          },
+        });
+
+        peerInstanceRef.current = peer;
+
+        peer.on('open', (id: string) => {
+          if (!isMounted) return;
+          console.log('[PeerJS] Ready with ID:', id);
+
+          // If joining a target room PIN from QR or input, connect immediately
+          if (targetPin) {
+            connectToPeer(`nb_${targetPin}`);
+          }
+        });
+
+        peer.on('connection', (conn) => {
+          if (!isMounted) return;
+          setupConnection(conn);
+        });
+
+        peer.on('error', (err: { type?: string; message?: string }) => {
+          if (!isMounted) return;
+          console.warn('[PeerJS] Error:', err);
+
+          // If ID collision happened on host, regenerate PIN and try again
+          if (err.type === 'unavailable-id') {
+            const nextPin = Math.floor(1000 + Math.random() * 9000).toString();
+            setRoomPin(nextPin);
+          }
+        });
+      } catch (err) {
+        console.error('Failed to initialize PeerJS:', err);
+      }
+    }
+
+    initPeer();
+
+    return () => {
+      isMounted = false;
+      if (peerInstanceRef.current) {
+        peerInstanceRef.current.destroy();
+        peerInstanceRef.current = null;
+      }
+    };
+  }, [roomPin, activeRoom, connectToPeer, setupConnection]);
+
+  // Sender: Stream files chunk-by-chunk to receiver
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startSendingFiles = async (conn: any) => {
+    isCancelledRef.current = false;
+    setStatus('transferring');
+    const totalBytes = filesToSend.reduce((acc, f) => acc + f.size, 0);
+    let bytesTransferred = 0;
+    const startTime = Date.now();
+    let lastSpeedCheckTime = startTime;
+    let lastSpeedCheckBytes = 0;
+
+    try {
+      for (let fileIndex = 0; fileIndex < filesToSend.length; fileIndex++) {
+        if (isCancelledRef.current) throw new Error('Transfer dibatalkan.');
+        const item = filesToSend[fileIndex];
+        const file = item.file;
+        if (!file) continue;
+
+        conn.send({
+          type: 'FILE_START',
+          index: fileIndex,
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          mimeType: item.type || 'application/octet-stream',
+        });
+
+        const chunkSize = 32 * 1024; // 32 KB chunk
+        let offset = 0;
+
+        while (offset < file.size) {
+          if (isCancelledRef.current) throw new Error('Transfer dibatalkan.');
+
+          // Flow control with RTCDataChannel bufferedAmount
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const dc = (conn as any).dataChannel as RTCDataChannel;
+          if (dc && dc.bufferedAmount > 3 * 1024 * 1024) {
+            await new Promise<void>((resolve) => {
+              const onLow = () => {
+                dc.removeEventListener('bufferedamountlow', onLow);
+                resolve();
+              };
+              dc.addEventListener('bufferedamountlow', onLow);
+              setTimeout(resolve, 50); // safety fallback
+            });
+          }
+
+          const end = Math.min(offset + chunkSize, file.size);
+          const slice = file.slice(offset, end);
+          const buffer = await slice.arrayBuffer();
+
+          conn.send({
+            type: 'CHUNK',
+            fileIndex,
+            chunk: buffer,
+          });
+
+          offset = end;
+          bytesTransferred += buffer.byteLength;
+
+          const now = Date.now();
+          const timeDiffSec = (now - lastSpeedCheckTime) / 1000;
+          if (timeDiffSec >= 0.25) {
+            const bytesDiff = bytesTransferred - lastSpeedCheckBytes;
+            const currentSpeedBps = bytesDiff / timeDiffSec;
+            lastSpeedCheckTime = now;
+            lastSpeedCheckBytes = bytesTransferred;
+
+            const remainingBytes = Math.max(0, totalBytes - bytesTransferred);
+            const eta = currentSpeedBps > 0 ? remainingBytes / currentSpeedBps : 0;
+            const progressPercent =
+              totalBytes > 0 ? Math.round((bytesTransferred / totalBytes) * 100) : 0;
+
+            setMetrics({
+              bytesTransferred,
+              totalBytes,
+              speedBps: currentSpeedBps,
+              timeRemainingSec: eta,
+              progressPercent: Math.min(100, progressPercent),
+              currentFileIndex: fileIndex + 1,
+              totalFiles: filesToSend.length,
+              currentFileName: item.name,
+              elapsedSeconds: (now - startTime) / 1000,
+            });
           }
         }
 
-        const answer = await peerConnectionRef.current.createAnswer();
-        await peerConnectionRef.current.setLocalDescription(answer);
-
-        await sendSignal(msg.senderId, {
-          type: 'answer',
-          senderId: myPeer.id,
-          sdp: answer,
+        conn.send({
+          type: 'FILE_END',
+          index: fileIndex,
+          name: item.name,
         });
       }
-    } else if (msg.type === 'answer') {
-      if (peerConnectionRef.current && msg.sdp) {
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
 
-        while (iceCandidateQueueRef.current.length > 0) {
-          const cand = iceCandidateQueueRef.current.shift();
-          if (cand) {
-            try {
-              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cand));
-            } catch (e) {
-              console.warn('Flushing candidate error:', e);
-            }
-          }
-        }
+      conn.send({ type: 'TRANSFER_COMPLETE' });
+      setStatus('completed');
+      try {
+        confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      } catch {}
+      showToast('Seluruh berkas berhasil dikirimkan!', 'success');
+    } catch (err: unknown) {
+      if (!isCancelledRef.current) {
+        const errText = err instanceof Error ? err.message : 'Koneksi transfer terputus.';
+        setErrorMessage(errText);
+        setStatus('error');
       }
-    } else if (msg.type === 'ice-candidate') {
-      if (msg.candidate) {
-        const pc = peerConnectionRef.current;
-        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-          } catch (e) {
-            console.warn('addIceCandidate error:', e);
-          }
-        } else {
-          iceCandidateQueueRef.current.push(msg.candidate);
-        }
-      }
-    } else if (msg.type === 'reject-transfer') {
-      setStatus('rejected');
-      cleanupConnections();
-      showToast('Penerima menolak transfer berkas.', 'info');
-    } else if (msg.type === 'cancel-transfer') {
-      setStatus('cancelled');
-      cleanupConnections();
-      showToast('Transfer dibatalkan.', 'info');
     }
   };
 
-  // 5. User clicks on a nearby peer to send files
+  // User clicks on a nearby peer in radar
   const handleSelectPeerToTarget = (peer: LocalPeer) => {
     setTargetPeer(peer);
     if (fileInputRef.current) {
@@ -309,12 +518,12 @@ export function SendStudio() {
     }
   };
 
-  // 6. User selected files from file picker
+  // User selected files from native file picker
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
-    if (!selected || selected.length === 0 || !targetPeer || !myPeer) return;
+    if (!selected || selected.length === 0 || !targetPeer) return;
 
-    cleanupConnections();
+    cleanupTransfer();
     isCancelledRef.current = false;
 
     const fileItems: FileTransferItem[] = Array.from(selected).map((f) => ({
@@ -341,89 +550,52 @@ export function SendStudio() {
       elapsedSeconds: 0,
     });
 
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' },
-      ],
-      iceCandidatePoolSize: 10,
-      bundlePolicy: 'max-bundle',
-    });
-    peerConnectionRef.current = pc;
-
-    const dc = pc.createDataChannel('nextbyteSendChannel', { ordered: true });
-    dataChannelRef.current = dc;
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && targetPeer) {
-        sendSignal(targetPeer.id, {
-          type: 'ice-candidate',
-          senderId: myPeer.id,
-          candidate: event.candidate.toJSON(),
+    // Ensure connection is established
+    let conn = connectionsRef.current.get(targetPeer.id);
+    if (!conn || !conn.open) {
+      conn = connectToPeer(targetPeer.id);
+      if (conn) {
+        await new Promise<void>((res) => {
+          conn.once('open', res);
+          setTimeout(res, 2500);
         });
       }
-    };
+    }
 
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'failed') {
-        setStatus('error');
-        setErrorMessage('Koneksi P2P langsung Wi-Fi gagal tersambung.');
-      }
-    };
-
-    dc.onopen = async () => {
-      setStatus('transferring');
-      try {
-        await streamFilesOverDataChannel(
-          dc,
-          fileItems,
-          (m) => setMetrics(m),
-          () => isCancelledRef.current
-        );
-
-        setStatus('completed');
-        try {
-          confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-        } catch {}
-        showToast('Seluruh berkas berhasil dikirimkan!', 'success');
-      } catch (err: unknown) {
-        if (!isCancelledRef.current) {
-          const errText = err instanceof Error ? err.message : 'Koneksi transfer terputus.';
-          setErrorMessage(errText);
-          setStatus('error');
-        }
-      }
-    };
-
-    // Send transfer request metadata to target peer
-    await sendSignal(targetPeer.id, {
-      type: 'file-list',
-      senderId: myPeer.id,
-      deviceInfo: getDeviceInfo(),
-      files: fileItems.map((f) => ({
-        id: f.id,
-        name: f.name,
-        size: f.size,
-        type: f.type,
-      })),
-    });
+    activeConnRef.current = conn;
+    if (conn && conn.open) {
+      conn.send({
+        type: 'TRANSFER_REQUEST',
+        senderName: myPeer?.name || 'Perangkat Pengirim',
+        files: fileItems.map((f) => ({
+          id: f.id,
+          name: f.name,
+          size: f.size,
+          type: f.type,
+        })),
+        totalBytes,
+      });
+    } else {
+      setStatus('error');
+      setErrorMessage('Gagal menghubungi perangkat penerima.');
+    }
   };
 
-  // 7. Receiver accepts incoming transfer
+  // Receiver accepts incoming transfer
   const handleAcceptIncoming = async () => {
-    if (!incomingRequest || !myPeer) return;
-
-    cleanupConnections();
-    isCancelledRef.current = false;
-    const { senderId, files } = incomingRequest;
+    if (!incomingRequest || !activeConnRef.current) return;
+    const { files, totalBytes } = incomingRequest;
     setIncomingRequest(null);
-    setStatus('connecting');
+    setStatus('transferring');
+    isCancelledRef.current = false;
 
-    const totalExpectedBytes = files.reduce((acc, f) => acc + f.size, 0);
+    const total = totalBytes || files.reduce((acc, f) => acc + f.size, 0);
+    expectedTotalBytesRef.current = total;
+    receiverBytesRef.current = 0;
 
     setMetrics({
       bytesTransferred: 0,
-      totalBytes: totalExpectedBytes,
+      totalBytes: total,
       speedBps: 0,
       timeRemainingSec: 0,
       progressPercent: 0,
@@ -433,86 +605,29 @@ export function SendStudio() {
       elapsedSeconds: 0,
     });
 
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' },
-      ],
-      iceCandidatePoolSize: 10,
-      bundlePolicy: 'max-bundle',
-    });
-    peerConnectionRef.current = pc;
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        sendSignal(senderId, {
-          type: 'ice-candidate',
-          senderId: myPeer.id,
-          candidate: event.candidate.toJSON(),
-        });
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'failed') {
-        setStatus('error');
-        setErrorMessage('Koneksi P2P langsung Wi-Fi gagal tersambung.');
-      }
-    };
-
-    pc.ondatachannel = (event) => {
-      setStatus('transferring');
-      const dc = event.channel;
-
-      const handle = setupDataChannelReceiver(
-        dc,
-        totalExpectedBytes,
-        files.length,
-        (m) => setMetrics(m),
-        () => {
-          setStatus('completed');
-          try {
-            confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-          } catch {}
-          showToast('Seluruh berkas berhasil diterima & disimpan!', 'success');
-        },
-        (err) => {
-          setErrorMessage(err.message || 'Gagal menerima berkas.');
-          setStatus('error');
-        }
-      );
-
-      receiverCancelRef.current = handle.cancel;
-    };
-
-    await sendSignal(senderId, {
-      type: 'accept-transfer',
-      senderId: myPeer.id,
+    activeConnRef.current.send({
+      type: 'TRANSFER_ACCEPT',
     });
   };
 
-  // 8. Receiver rejects incoming transfer
+  // Receiver rejects incoming transfer
   const handleRejectIncoming = async () => {
-    if (!incomingRequest || !myPeer) return;
-    const { senderId } = incomingRequest;
-    setIncomingRequest(null);
-    await sendSignal(senderId, {
-      type: 'reject-transfer',
-      senderId: myPeer.id,
-      reason: 'Penerima menolak transfer.',
+    if (!incomingRequest || !activeConnRef.current) return;
+    activeConnRef.current.send({
+      type: 'TRANSFER_REJECT',
     });
+    setIncomingRequest(null);
   };
 
-  // 9. Cancel ongoing transfer
+  // Cancel ongoing transfer
   const handleCancelTransfer = async () => {
     isCancelledRef.current = true;
-    if (myPeer && targetPeer) {
-      await sendSignal(targetPeer.id, {
-        type: 'cancel-transfer',
-        senderId: myPeer.id,
+    if (activeConnRef.current && activeConnRef.current.open) {
+      activeConnRef.current.send({
+        type: 'TRANSFER_CANCEL',
       });
     }
-    cleanupConnections();
+    cleanupTransfer();
     setStatus('idle');
     setTargetPeer(null);
     setFilesToSend([]);
@@ -520,7 +635,7 @@ export function SendStudio() {
   };
 
   const handleResetToRadar = () => {
-    cleanupConnections();
+    cleanupTransfer();
     setStatus('idle');
     setTargetPeer(null);
     setFilesToSend([]);
@@ -528,11 +643,12 @@ export function SendStudio() {
 
   const handleJoinPin = (pin: string) => {
     setActiveRoom(pin);
-    showToast(`Bergabung ke grup PIN: ${pin}`, 'success');
+    connectToPeer(`nb_${pin}`);
+    showToast(`Menghubungkan ke PIN: ${pin}`, 'info');
   };
 
   const pairUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/send?room=${activeRoom || roomPin}`
+    ? `${window.location.origin}/send?pin=${activeRoom || roomPin}`
     : '';
 
   const handleCopyPairLink = () => {
@@ -544,7 +660,7 @@ export function SendStudio() {
     }
   };
 
-  // Render QR Code in modal pointing directly to active pairing room
+  // Render QR Code in modal pointing directly to active pairing PIN
   useEffect(() => {
     if (!showQrModal || !qrContainerRef.current || !pairUrl) return;
 
@@ -586,7 +702,7 @@ export function SendStudio() {
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
-      {/* Hidden File Input Triggered on Peer Click */}
+      {/* Hidden File Picker */}
       <input
         ref={fileInputRef}
         type="file"
@@ -621,13 +737,13 @@ export function SendStudio() {
 
       {/* 2. STATE: WAITING FOR RECEIVER TO ACCEPT */}
       {status === 'waiting_for_receiver' && targetPeer && (
-        <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-6 max-w-lg mx-auto shadow-xl animate-in zoom-in-95">
-          <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
-            <RefreshCw className="w-8 h-8 animate-spin" />
+        <div className="p-6 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-5 sm:space-y-6 max-w-lg mx-auto shadow-xl animate-in zoom-in-95 max-w-full overflow-hidden">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shrink-0">
+            <RefreshCw className="w-7 h-7 sm:w-8 sm:h-8 animate-spin" />
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
               Menunggu Konfirmasi Penerima...
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -636,7 +752,7 @@ export function SendStudio() {
             </p>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 truncate">
             {filesToSend.length} berkas dipilih ({formatBytes(metrics.totalBytes)})
           </div>
 
@@ -655,23 +771,27 @@ export function SendStudio() {
         <TransferProgressCard
           metrics={metrics}
           onCancel={handleCancelTransfer}
-          title={status === 'connecting' ? 'Menyiapkan Jalur Wi-Fi P2P...' : 'Mentransfer Berkas Lewat Wi-Fi...'}
+          title={
+            incomingRequest || (status === 'transferring' && filesToSend.length === 0)
+              ? 'Sedang Menerima Berkas...'
+              : 'Sedang Mengirim Berkas...'
+          }
         />
       )}
 
       {/* 4. STATE: COMPLETED */}
       {status === 'completed' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-12 shadow-2xl text-center space-y-6 animate-in zoom-in-95">
-          <div className="w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500/20 text-emerald-500 flex items-center justify-center mx-auto shadow-inner">
-            <CheckCircle2 className="w-10 h-10" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-12 shadow-2xl text-center space-y-6 animate-in zoom-in-95 max-w-full overflow-hidden">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500/20 text-emerald-500 flex items-center justify-center mx-auto shadow-inner shrink-0">
+            <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10" />
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
               Transfer Berhasil Selesai!
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Seluruh berkas telah terkirim sempurna secara peer-to-peer melalui jaringan Wi-Fi lokal.
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Seluruh berkas telah terkirim sempurna secara peer-to-peer tanpa perantara server.
             </p>
           </div>
 
@@ -681,8 +801,8 @@ export function SendStudio() {
               <strong className="text-slate-900 dark:text-white">{formatBytes(metrics.totalBytes)}</strong>
             </div>
             <div className="flex justify-between text-slate-500 dark:text-slate-400">
-              <span>Kecepatan Rata-Rata:</span>
-              <strong className="text-slate-900 dark:text-white">{formatBytes(metrics.speedBps)}/s</strong>
+              <span>Status:</span>
+              <strong className="text-emerald-600 dark:text-emerald-400">100% Selesai</strong>
             </div>
           </div>
 
@@ -696,16 +816,38 @@ export function SendStudio() {
         </div>
       )}
 
-      {/* 5. STATE: ERROR */}
-      {status === 'error' && (
-        <div className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-3xl p-8 shadow-xl text-center space-y-4 max-w-lg mx-auto">
-          <div className="w-16 h-16 rounded-2xl bg-red-50 dark:bg-red-950/40 text-red-500 flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-8 h-8" />
+      {/* 5. STATE: REJECTED */}
+      {status === 'rejected' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl text-center space-y-4 max-w-lg mx-auto max-w-full overflow-hidden">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-7 h-7" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Koneksi Terputus</h3>
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Transfer Ditolak</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {errorMessage || 'Jalur transfer Wi-Fi terputus sebelum berkas selesai dikirim.'}
+              Perangkat penerima menolak permintaan transfer berkas.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleResetToRadar}
+            className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors"
+          >
+            Kembali ke Radar
+          </button>
+        </div>
+      )}
+
+      {/* 6. STATE: ERROR */}
+      {status === 'error' && (
+        <div className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-3xl p-6 sm:p-8 shadow-xl text-center space-y-4 max-w-lg mx-auto max-w-full overflow-hidden">
+          <div className="w-14 h-14 rounded-2xl bg-red-50 dark:bg-red-950/40 text-red-500 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Koneksi Terputus</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {errorMessage || 'Jalur transfer terputus sebelum berkas selesai dikirim.'}
             </p>
           </div>
           <button
@@ -721,15 +863,15 @@ export function SendStudio() {
       {/* QR Code Modal for Phone Pairing */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95 max-w-full overflow-hidden">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Hubungkan Ponsel Hotspot
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider truncate">
+                Hubungkan Ponsel (Hotspot / Wi-Fi)
               </span>
               <button
                 onClick={() => setShowQrModal(false)}
                 type="button"
-                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -745,7 +887,7 @@ export function SendStudio() {
             </div>
 
             {/* QR Canvas Container */}
-            <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm inline-block mx-auto">
+            <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm inline-block mx-auto max-w-full overflow-hidden">
               <div ref={qrContainerRef} className="flex items-center justify-center" />
             </div>
 

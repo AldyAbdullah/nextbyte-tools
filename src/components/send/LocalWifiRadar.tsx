@@ -56,42 +56,42 @@ export function LocalWifiRadar({
   };
 
   return (
-    <div className="w-full space-y-6 animate-in fade-in duration-300">
+    <div className="w-full max-w-full overflow-hidden space-y-6 animate-in fade-in duration-300">
       {/* Top Bar: My Device Status & Pairing Info */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
             {myPeer ? getDeviceIcon(myPeer.deviceType, 'w-5 h-5') : <Wifi className="w-5 h-5" />}
           </div>
-          <div>
-            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Perangkat Anda {activeRoom ? `(Grup: ${activeRoom})` : '(Wi-Fi Hotspot)'}
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span className="truncate">Perangkat Anda {activeRoom ? `(Grup: ${activeRoom})` : '(Hotspot / Wi-Fi)'}</span>
             </div>
-            <div className="text-sm font-bold text-slate-900 dark:text-white">
+            <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
               {myPeer?.name || 'Mendeteksi perangkat...'}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
             PIN: <span className="text-blue-600 dark:text-blue-400 text-sm tracking-wider">{roomPin}</span>
           </div>
 
           <button
             onClick={onShowQr}
             type="button"
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all"
+            className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all shrink-0"
           >
-            <QrCode className="w-4 h-4" />
-            Hubungkan HP (Scan QR)
+            <QrCode className="w-4 h-4 shrink-0" />
+            <span>Scan QR</span>
           </button>
         </div>
       </div>
 
       {/* Main Radar / Nearby Devices Section */}
-      <div className="relative rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 p-8 sm:p-12 text-center overflow-hidden">
+      <div className="relative rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 p-6 sm:p-12 text-center overflow-hidden max-w-full">
         {peers.length > 0 ? (
           <div className="space-y-6">
             <div className="space-y-1">
@@ -113,16 +113,16 @@ export function LocalWifiRadar({
                 <button
                   key={peer.id}
                   onClick={() => onSelectPeer(peer)}
-                  className="group relative p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 hover:border-blue-500 dark:border-slate-800 dark:hover:border-blue-500 shadow-sm hover:shadow-xl hover:shadow-blue-500/10 transition-all text-center space-y-3"
+                  className="group relative p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 hover:border-blue-500 dark:border-slate-800 dark:hover:border-blue-500 shadow-sm hover:shadow-xl hover:shadow-blue-500/10 transition-all text-center space-y-3 overflow-hidden"
                 >
-                  <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 group-hover:bg-blue-600 text-blue-600 dark:text-blue-400 group-hover:text-white flex items-center justify-center mx-auto transition-all shadow-inner">
-                    {getDeviceIcon(peer.deviceType, 'w-8 h-8')}
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 group-hover:bg-blue-600 text-blue-600 dark:text-blue-400 group-hover:text-white flex items-center justify-center mx-auto transition-all shadow-inner shrink-0">
+                    {getDeviceIcon(peer.deviceType, 'w-7 h-7 sm:w-8 sm:h-8')}
                   </div>
-                  <div>
-                    <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">
                       {peer.name}
                     </h4>
-                    <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                    <p className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
                       {peer.os} • {peer.browser}
                     </p>
                   </div>
@@ -137,11 +137,11 @@ export function LocalWifiRadar({
         ) : (
           /* Empty State: Radar animation waiting for second device */
           <div className="max-w-md mx-auto space-y-6 py-2">
-            <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
+            <div className="relative w-24 h-24 sm:w-28 sm:h-28 mx-auto flex items-center justify-center">
               <div className="absolute inset-0 rounded-full bg-blue-500/10 animate-ping opacity-75" />
               <div className="absolute inset-2 rounded-full bg-blue-500/15 animate-pulse" />
-              <div className="relative w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-xl shadow-blue-500/30">
-                <Radio className="w-8 h-8 animate-pulse" />
+              <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-xl shadow-blue-500/30">
+                <Radio className="w-7 h-7 sm:w-8 sm:h-8 animate-pulse" />
               </div>
             </div>
 
@@ -150,7 +150,7 @@ export function LocalWifiRadar({
                 Mencari Perangkat di Jaringan Hotspot / Wi-Fi...
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                Scan QR Code di bawah dengan kamera HP Anda untuk menghubungkan secara instan.
+                Scan QR Code di bawah dengan kamera HP Anda, atau masukkan PIN untuk menghubungkan seketika.
               </p>
             </div>
 
@@ -158,7 +158,7 @@ export function LocalWifiRadar({
               <button
                 onClick={onShowQr}
                 type="button"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all"
+                className="inline-flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all"
               >
                 <QrCode className="w-4 h-4" />
                 Scan QR dari HP
@@ -182,7 +182,7 @@ export function LocalWifiRadar({
                 <button
                   type="submit"
                   disabled={!pinInput.trim()}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold transition-all disabled:opacity-40"
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold transition-all disabled:opacity-40 shrink-0"
                 >
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
