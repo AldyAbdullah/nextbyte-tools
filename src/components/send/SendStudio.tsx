@@ -58,10 +58,14 @@ export function SendStudio() {
   const [transferRole, setTransferRole] = useState<'idle' | 'sender' | 'receiver'>('idle');
   const transferRoleRef = useRef<'idle' | 'sender' | 'receiver'>('idle');
   const [targetPeer, setTargetPeer] = useState<LocalPeer | null>(null);
+  const targetPeerRef = useRef<LocalPeer | null>(null);
   const [filesToSend, setFilesToSend] = useState<FileTransferItem[]>([]);
+  const filesToSendRef = useRef<FileTransferItem[]>([]);
   const [receivedFiles, setReceivedFiles] = useState<FileReceiverResult[]>([]);
   const receivedFilesRef = useRef<FileReceiverResult[]>([]);
   const receivedMetadataRef = useRef<Array<{ id: string; name: string; size: number; type: string }>>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startSendingFilesRef = useRef<(conn: any) => Promise<void>>(async () => {});
   const [incomingRequest, setIncomingRequest] = useState<{
     senderId: string;
     senderName: string;
@@ -232,7 +236,9 @@ export function SendStudio() {
         case 'TRANSFER_ACCEPT': {
           // Sender receives acceptance from receiver -> start streaming files!
           activeConnRef.current = conn;
-          startSendingFiles(conn);
+          if (startSendingFilesRef.current) {
+            startSendingFilesRef.current(conn);
+          }
           break;
         }
 
@@ -368,7 +374,6 @@ export function SendStudio() {
     conn.on('error', (err: unknown) => {
       console.warn('Peer connection error:', err);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanupTransfer, showToast]);
 
   // Connect to another peer by PeerJS ID (e.g. 'nb_4821')
@@ -474,19 +479,28 @@ export function SendStudio() {
 
   // Sender: Stream files chunk-by-chunk to receiver
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const startSendingFiles = async (conn: any) => {
+  const startSendingFiles = useCallback(async (conn: any) => {
     isCancelledRef.current = false;
+    setTransferRole('sender');
+    transferRoleRef.current = 'sender';
     setStatus('transferring');
-    const totalBytes = filesToSend.reduce((acc, f) => acc + f.size, 0);
+
+    const items = filesToSendRef.current;
+    if (!items || items.length === 0) {
+      console.warn('Tidak ada berkas yang dipilih untuk dikirim.');
+      return;
+    }
+
+    const totalBytes = items.reduce((acc, f) => acc + f.size, 0);
     let bytesTransferred = 0;
     const startTime = Date.now();
     let lastSpeedCheckTime = startTime;
     let lastSpeedCheckBytes = 0;
 
     try {
-      for (let fileIndex = 0; fileIndex < filesToSend.length; fileIndex++) {
+      for (let fileIndex = 0; fileIndex < items.length; fileIndex++) {
         if (isCancelledRef.current) throw new Error('Transfer dibatalkan.');
-        const item = filesToSend[fileIndex];
+        const item = items[fileIndex];
         const file = item.file;
         if (!file) continue;
 
@@ -552,7 +566,7 @@ export function SendStudio() {
               timeRemainingSec: eta,
               progressPercent: Math.min(100, progressPercent),
               currentFileIndex: fileIndex + 1,
-              totalFiles: filesToSend.length,
+              totalFiles: items.length,
               currentFileName: item.name,
               elapsedSeconds: (now - startTime) / 1000,
             });
@@ -579,10 +593,16 @@ export function SendStudio() {
         setStatus('error');
       }
     }
-  };
+  }, [showToast]);
+
+  // Keep startSendingFilesRef synchronized
+  useEffect(() => {
+    startSendingFilesRef.current = startSendingFiles;
+  }, [startSendingFiles]);
 
   // User clicks on a nearby peer in radar
   const handleSelectPeerToTarget = (peer: LocalPeer) => {
+    targetPeerRef.current = peer;
     setTargetPeer(peer);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -593,7 +613,8 @@ export function SendStudio() {
   // User selected files from native file picker
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
-    if (!selected || selected.length === 0 || !targetPeer) return;
+    const peer = targetPeerRef.current || targetPeer;
+    if (!selected || selected.length === 0 || !peer) return;
 
     cleanupTransfer();
     setTransferRole('sender');
@@ -610,6 +631,7 @@ export function SendStudio() {
       file: f,
     }));
 
+    filesToSendRef.current = fileItems;
     setFilesToSend(fileItems);
     setStatus('waiting_for_receiver');
     const totalBytes = fileItems.reduce((acc, f) => acc + f.size, 0);
@@ -627,9 +649,9 @@ export function SendStudio() {
     });
 
     // Ensure connection is established
-    let conn = connectionsRef.current.get(targetPeer.id);
+    let conn = connectionsRef.current.get(peer.id);
     if (!conn || !conn.open) {
-      conn = connectToPeer(targetPeer.id);
+      conn = connectToPeer(peer.id);
       if (conn) {
         await new Promise<void>((res) => {
           conn.once('open', res);
@@ -712,7 +734,9 @@ export function SendStudio() {
     transferRoleRef.current = 'idle';
     setStatus('idle');
     setTargetPeer(null);
+    targetPeerRef.current = null;
     setFilesToSend([]);
+    filesToSendRef.current = [];
     setReceivedFiles([]);
     receivedFilesRef.current = [];
     receivedMetadataRef.current = [];
@@ -725,7 +749,9 @@ export function SendStudio() {
     transferRoleRef.current = 'idle';
     setStatus('idle');
     setTargetPeer(null);
+    targetPeerRef.current = null;
     setFilesToSend([]);
+    filesToSendRef.current = [];
     setReceivedFiles([]);
     receivedFilesRef.current = [];
     receivedMetadataRef.current = [];
@@ -989,7 +1015,9 @@ export function SendStudio() {
                 </div>
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Jumlah Berkas:</span>
-                  <strong className="text-slate-900 dark:text-white">{filesToSend.length} Berkas</strong>
+                  <strong className="text-slate-900 dark:text-white">
+                    {filesToSendRef.current.length || filesToSend.length || metrics.totalFiles} Berkas
+                  </strong>
                 </div>
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 flex items-start gap-2">
                   <FolderDown className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
