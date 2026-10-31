@@ -54,10 +54,14 @@ export function SendStudio() {
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
   const [showCameraScanner, setShowCameraScanner] = useState<boolean>(false);
 
-  // Transfer states
+  // Transfer states & roles
+  const [transferRole, setTransferRole] = useState<'idle' | 'sender' | 'receiver'>('idle');
+  const transferRoleRef = useRef<'idle' | 'sender' | 'receiver'>('idle');
   const [targetPeer, setTargetPeer] = useState<LocalPeer | null>(null);
   const [filesToSend, setFilesToSend] = useState<FileTransferItem[]>([]);
   const [receivedFiles, setReceivedFiles] = useState<FileReceiverResult[]>([]);
+  const receivedFilesRef = useRef<FileReceiverResult[]>([]);
+  const receivedMetadataRef = useRef<Array<{ id: string; name: string; size: number; type: string }>>([]);
   const [incomingRequest, setIncomingRequest] = useState<{
     senderId: string;
     senderName: string;
@@ -119,6 +123,31 @@ export function SendStudio() {
     };
     setMyPeer(peer);
   }, []);
+
+  // Attempt automatic download when receiver completes transfer
+  useEffect(() => {
+    if (status === 'completed' && (transferRole === 'receiver' || receivedFiles.length > 0)) {
+      receivedFiles.forEach((file) => {
+        if (file.url) {
+          try {
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = file.url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+              if (document.body.contains(a)) {
+                document.body.removeChild(a);
+              }
+            }, 1000);
+          } catch (e) {
+            console.warn('Auto download attempt blocked by browser policy:', e);
+          }
+        }
+      });
+    }
+  }, [status, transferRole, receivedFiles]);
 
   // Cleanup active file handle
   const cleanupTransfer = useCallback(() => {
@@ -190,6 +219,7 @@ export function SendStudio() {
           activeConnRef.current = conn;
           expectedTotalBytesRef.current = data.totalBytes || 0;
           receiverBytesRef.current = 0;
+          receivedMetadataRef.current = data.files || [];
           setIncomingRequest({
             senderId: conn.peer,
             senderName: data.senderName || 'Perangkat Pengirim',
@@ -227,7 +257,7 @@ export function SendStudio() {
             currentFileIndex: (data.index || 0) + 1,
           }));
           try {
-            currentHandleRef.current = await createFileReceiverHandle(
+            currentHandleRef.current = createFileReceiverHandle(
               data.name,
               data.mimeType || 'application/octet-stream'
             );
@@ -240,7 +270,7 @@ export function SendStudio() {
         case 'CHUNK': {
           if (data.chunk) {
             if (currentHandleRef.current) {
-              await currentHandleRef.current.writeChunk(data.chunk);
+              currentHandleRef.current.writeChunk(data.chunk);
             }
             receiverBytesRef.current += data.chunk.byteLength;
             const total = expectedTotalBytesRef.current || 1;
@@ -277,12 +307,13 @@ export function SendStudio() {
         case 'FILE_END': {
           if (currentHandleRef.current) {
             try {
-              const res = await currentHandleRef.current.finish();
+              const res = currentHandleRef.current.finish();
               if (res) {
-                setReceivedFiles((prev) => {
-                  if (prev.some((f) => f.name === res.name)) return prev;
-                  return [...prev, res];
-                });
+                receivedFilesRef.current = [
+                  ...receivedFilesRef.current.filter((f) => f.name !== res.name),
+                  res,
+                ];
+                setReceivedFiles([...receivedFilesRef.current]);
               }
             } catch (err) {
               console.warn('Gagal menyelesaikan penulisan berkas:', err);
@@ -295,12 +326,13 @@ export function SendStudio() {
         case 'TRANSFER_COMPLETE': {
           if (currentHandleRef.current) {
             try {
-              const res = await currentHandleRef.current.finish();
+              const res = currentHandleRef.current.finish();
               if (res) {
-                setReceivedFiles((prev) => {
-                  if (prev.some((f) => f.name === res.name)) return prev;
-                  return [...prev, res];
-                });
+                receivedFilesRef.current = [
+                  ...receivedFilesRef.current.filter((f) => f.name !== res.name),
+                  res,
+                ];
+                setReceivedFiles([...receivedFilesRef.current]);
               }
             } catch (err) {
               console.warn('Gagal menyelesaikan penulisan berkas di complete:', err);
@@ -564,7 +596,10 @@ export function SendStudio() {
     if (!selected || selected.length === 0 || !targetPeer) return;
 
     cleanupTransfer();
+    setTransferRole('sender');
+    transferRoleRef.current = 'sender';
     setReceivedFiles([]);
+    receivedFilesRef.current = [];
     isCancelledRef.current = false;
 
     const fileItems: FileTransferItem[] = Array.from(selected).map((f) => ({
@@ -627,8 +662,11 @@ export function SendStudio() {
     if (!incomingRequest || !activeConnRef.current) return;
     const { files, totalBytes } = incomingRequest;
     setIncomingRequest(null);
+    setTransferRole('receiver');
+    transferRoleRef.current = 'receiver';
     setStatus('transferring');
     setReceivedFiles([]);
+    receivedFilesRef.current = [];
     isCancelledRef.current = false;
 
     const total = totalBytes || files.reduce((acc, f) => acc + f.size, 0);
@@ -670,18 +708,27 @@ export function SendStudio() {
       });
     }
     cleanupTransfer();
+    setTransferRole('idle');
+    transferRoleRef.current = 'idle';
     setStatus('idle');
     setTargetPeer(null);
     setFilesToSend([]);
+    setReceivedFiles([]);
+    receivedFilesRef.current = [];
+    receivedMetadataRef.current = [];
     showToast('Transfer dibatalkan.', 'info');
   };
 
   const handleResetToRadar = () => {
     cleanupTransfer();
+    setTransferRole('idle');
+    transferRoleRef.current = 'idle';
     setStatus('idle');
     setTargetPeer(null);
     setFilesToSend([]);
     setReceivedFiles([]);
+    receivedFilesRef.current = [];
+    receivedMetadataRef.current = [];
   };
 
   // User entered target PIN manually
@@ -849,14 +896,14 @@ export function SendStudio() {
           </div>
 
           {/* IF THIS DEVICE IS THE RECEIVER */}
-          {receivedFiles.length > 0 ? (
+          {transferRole === 'receiver' || receivedFiles.length > 0 ? (
             <div className="space-y-4">
               <div className="space-y-1">
                 <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
                   Berkas Berhasil Diterima!
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                  Klik tombol <strong>Simpan / Unduh</strong> di bawah untuk menyimpan berkas langsung ke perangkat Anda:
+                  Klik tombol <strong>Simpan / Unduh</strong> di bawah untuk menyimpan berkas ke perangkat Anda:
                 </p>
               </div>
 
@@ -880,24 +927,46 @@ export function SendStudio() {
                       </div>
                     </div>
 
-                    {file.url && (
+                    {file.url ? (
                       <a
                         href={file.url}
                         download={file.name}
                         className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-md shadow-blue-500/25 transition-all"
                       >
                         <Download className="w-4 h-4" />
-                        <span>Simpan / Unduh Berkas Ini</span>
+                        <span>Simpan / Unduh Berkas ({formatBytes(file.size)})</span>
                       </a>
+                    ) : (
+                      <div className="text-xs text-slate-500 italic">
+                        Menyiapkan berkas...
+                      </div>
                     )}
                   </div>
                 ))}
+
+                {receivedFiles.length === 0 && receivedMetadataRef.current.length > 0 && (
+                  <div className="space-y-2">
+                    {receivedMetadataRef.current.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 rounded-2xl bg-blue-50/60 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900 text-left space-y-2"
+                      >
+                        <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                          {item.name}
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono">
+                          {formatBytes(item.size)} • Memproses penyimpanan...
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 text-left flex items-start gap-2">
                 <FolderDown className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
                 <span>
-                  Berkas otomatis tersimpan di folder <strong>Download (Unduhan)</strong> perangkat Anda.
+                  Klik tombol biru di atas. Berkas akan otomatis masuk ke folder <strong>Download (Unduhan)</strong> atau galeri perangkat Anda.
                 </span>
               </div>
             </div>
@@ -925,7 +994,7 @@ export function SendStudio() {
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 flex items-start gap-2">
                   <FolderDown className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                   <span>
-                    Berkas telah diterima oleh <strong>{targetPeer?.name || 'perangkat penerima'}</strong>. Silakan periksa layar perangkat penerima untuk menyimpan berkas.
+                    Berkas telah diterima oleh <strong>{targetPeer?.name || 'perangkat penerima'}</strong>. Silakan periksa layar perangkat penerima untuk mengklik tombol <strong>Simpan / Unduh</strong>.
                   </span>
                 </div>
               </div>
