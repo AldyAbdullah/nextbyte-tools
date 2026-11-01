@@ -177,6 +177,9 @@ export function SendStudio() {
     connectionsRef.current.set(conn.peer, conn);
 
     conn.on('open', () => {
+      // Auto-close QR code modal when a peer connects
+      setShowQrModal(false);
+
       // Exchange self device info
       if (myPeerRef.current) {
         conn.send({
@@ -196,6 +199,7 @@ export function SendStudio() {
 
       switch (data.type) {
         case 'PEER_INFO': {
+          setShowQrModal(false);
           if (data.peer) {
             const remotePeer: LocalPeer = {
               ...data.peer,
@@ -220,6 +224,7 @@ export function SendStudio() {
         }
 
         case 'TRANSFER_REQUEST': {
+          setShowQrModal(false);
           activeConnRef.current = conn;
           expectedTotalBytesRef.current = data.totalBytes || 0;
           receiverBytesRef.current = 0;
@@ -448,6 +453,7 @@ export function SendStudio() {
 
         peer.on('connection', (conn) => {
           if (!isMounted) return;
+          setShowQrModal(false);
           setupConnection(conn);
         });
 
