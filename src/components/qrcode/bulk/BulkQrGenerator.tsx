@@ -391,9 +391,9 @@ export function BulkQrGenerator() {
 
               {/* Error Alert if parse failed */}
               {parseError && (
-                <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2.5 text-left max-w-xl mx-auto">
-                  <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
-                  <div>
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2.5 text-left max-w-xl mx-auto">
+                  <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                  <div className="min-w-0 break-words [overflow-wrap:anywhere] leading-relaxed">
                     <span className="font-semibold block">Gagal Membaca File</span>
                     <span>{parseError}</span>
                   </div>

@@ -19,8 +19,8 @@ import { ClipboardExpiry, ClipboardAttachment } from '@/types/clipboard';
 
 const MAX_TEXT_BYTES = 100 * 1024; // 100 KB
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
-const MAX_TOTAL_FILES_BYTES = 25 * 1024 * 1024; // 25 MB total
-const MAX_FILES_COUNT = 5;
+const MAX_TOTAL_FILES_BYTES = 20 * 1024 * 1024; // 20 MB total (maks 2 file x 10 MB)
+const MAX_FILES_COUNT = 2; // Maksimal 2 file
 
 // Supported extensions and MIME types
 const ALLOWED_EXTENSIONS = new Set([
@@ -62,15 +62,15 @@ export async function POST(req: NextRequest) {
     const filesToUpload: File[] = [];
     const allFiles = formData.getAll('files');
     for (const item of allFiles) {
-      if (item instanceof File && item.size > 0) {
-        filesToUpload.push(item);
+      if (item && typeof item === 'object' && 'size' in item && (item as File).size > 0) {
+        filesToUpload.push(item as File);
       }
     }
     // Check fallback legacy 'image' field
     if (filesToUpload.length === 0) {
       const legacyImage = formData.get('image');
-      if (legacyImage instanceof File && legacyImage.size > 0) {
-        filesToUpload.push(legacyImage);
+      if (legacyImage && typeof legacyImage === 'object' && 'size' in legacyImage && (legacyImage as File).size > 0) {
+        filesToUpload.push(legacyImage as File);
       }
     }
 
@@ -113,7 +113,14 @@ export async function POST(req: NextRequest) {
       }
       totalFilesSize += file.size;
 
-      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      let ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (!ALLOWED_EXTENSIONS.has(ext) && file.type) {
+        if (file.type === 'image/png') ext = 'png';
+        else if (file.type === 'image/jpeg' || file.type === 'image/jpg') ext = 'jpg';
+        else if (file.type === 'image/webp') ext = 'webp';
+        else if (file.type === 'application/pdf') ext = 'pdf';
+      }
+
       if (!ALLOWED_EXTENSIONS.has(ext)) {
         return NextResponse.json(
           {
@@ -127,7 +134,7 @@ export async function POST(req: NextRequest) {
 
     if (totalFilesSize > MAX_TOTAL_FILES_BYTES) {
       return NextResponse.json(
-        { success: false, error: 'Total ukuran seluruh lampiran melebihi batas 25 MB.' },
+        { success: false, error: 'Total ukuran seluruh lampiran melebihi batas 20 MB.' },
         { status: 400 }
       );
     }

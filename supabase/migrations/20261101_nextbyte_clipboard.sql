@@ -74,32 +74,14 @@ INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 VALUES (
     'clipboard-images',
     'clipboard-images',
-    false, -- Wajib PRIVATE (diakses via signed URL)
-    10485760, -- 10 MB per file
-    ARRAY[
-      'image/jpeg', 'image/png', 'image/webp',
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-powerpoint',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    ]
+    true, -- Diset public agar gambar & unduhan dapat diakses langsung maupun lewat signed URL
+    10485760, -- 10 MB per file (sesuai batas maksimal)
+    NULL -- Set NULL agar semua format berkas didukung tanpa ditolak oleh filter MIME storage
 )
 ON CONFLICT (id) DO UPDATE SET
-    public = false,
+    public = true,
     file_size_limit = 10485760,
-    allowed_mime_types = ARRAY[
-      'image/jpeg', 'image/png', 'image/webp',
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-powerpoint',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    ];
+    allowed_mime_types = NULL;
 
 -- Storage policy untuk upload
 DROP POLICY IF EXISTS "Public upload clipboard images" ON storage.objects;
@@ -108,6 +90,14 @@ ON storage.objects
 FOR INSERT
 TO anon, authenticated
 WITH CHECK (bucket_id = 'clipboard-images');
+
+-- Storage policy untuk membaca / download berkas (WAJIB agar gambar dapat tampil dan tautan unduh berfungsi)
+DROP POLICY IF EXISTS "Public select clipboard images" ON storage.objects;
+CREATE POLICY "Public select clipboard images"
+ON storage.objects
+FOR SELECT
+TO anon, authenticated
+USING (bucket_id = 'clipboard-images');
 
 -- Storage policy untuk delete
 DROP POLICY IF EXISTS "Authorized delete clipboard images" ON storage.objects;

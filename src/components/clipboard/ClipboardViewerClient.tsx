@@ -386,7 +386,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
 
         <form onSubmit={handleVerifyPassword} className="space-y-4">
           {passwordError && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold">
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold break-words [overflow-wrap:anywhere] leading-relaxed">
               {passwordError}
             </div>
           )}
@@ -457,7 +457,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
         ]
       : [];
 
-  const imageAttachments = resolvedAttachments.filter((att) => att.type === 'image' && att.url);
+  const imageAttachments = resolvedAttachments.filter((att) => att.type === 'image');
   const documentAttachments = resolvedAttachments.filter((att) => att.type !== 'image');
 
   // 4. MAIN CONTENT VIEW STATE (AUTHENTICATED / UNLOCKED)
@@ -577,39 +577,49 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleCopyImage(imgAtt.url!, imgAtt.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors"
-                    >
-                      {copiedImageId === imgAtt.id ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                      <span>{copiedImageId === imgAtt.id ? 'Tersalin!' : 'Copy Image'}</span>
-                    </button>
+                  {imgAtt.url ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyImage(imgAtt.url!, imgAtt.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors"
+                      >
+                        {copiedImageId === imgAtt.id ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                        <span>{copiedImageId === imgAtt.id ? 'Tersalin!' : 'Copy Image'}</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadFile(imgAtt.url!, imgAtt.name || `gambar-${slug}.png`)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Unduh</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(imgAtt.url!, imgAtt.name || `gambar-${slug}.png`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Unduh</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-amber-500 font-medium">Tautan berkas tidak tersedia</span>
+                  )}
+                </div>
+
+                {imgAtt.url ? (
+                  <div className="relative rounded-2xl overflow-hidden bg-slate-900/5 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 p-2 sm:p-4 flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imgAtt.url}
+                      alt={imgAtt.name || 'Gambar Clipboard'}
+                      className="max-h-[600px] w-auto object-contain rounded-xl shadow-sm"
+                    />
                   </div>
-                </div>
-
-                <div className="relative rounded-2xl overflow-hidden bg-slate-900/5 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 p-2 sm:p-4 flex items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={imgAtt.url!}
-                    alt={imgAtt.name}
-                    className="max-h-[600px] w-auto object-contain rounded-xl shadow-sm"
-                  />
-                </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-700 dark:text-amber-300">
+                    Berkas gambar terdaftar namun URL tidak dapat diakses atau izin penyimpanan (storage policy) Supabase belum mengizinkan akses publik.
+                  </div>
+                )}
               </div>
             ))}
           </div>

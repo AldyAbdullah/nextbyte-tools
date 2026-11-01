@@ -60,14 +60,45 @@ export async function scanDocxTemplate(file: File): Promise<MailMergeTemplateInf
     if (!fileData) continue;
     const content = await fileData.async('text');
 
-    // Also check for image placeholders with alt text: <wp:docPr ... descr="{{foto}}" or name="{{foto}}">
-    const docPrRegex = /<wp:docPr[^>]+(?:descr|name)=["']([^"']+)["'][^>]*>/gi;
+    // Also check for image placeholders with alt text in DrawingML: <wp:docPr ... descr="{{foto}}" or name="{{foto}}" or title="{{foto}}">
+    const docPrRegex = /<wp:docPr[^>]+(?:descr|name|title)=["']([^"']+)["'][^>]*>/gi;
     let docPrMatch: RegExpExecArray | null;
     while ((docPrMatch = docPrRegex.exec(content)) !== null) {
       const descr = docPrMatch[1].trim();
-      const match = descr.match(/^\{\{([^{}]+)\}\}$/) || descr.match(/^\{%([^{}]+)\}$/) || descr.match(/^\{([^{}]+)\}$/);
+      const match =
+        descr.match(/^\{\{([^{}]+)\}\}$/) ||
+        descr.match(/^\{%([^{}]+)\}$/) ||
+        descr.match(/^<<([^<>]+)>>$/) ||
+        descr.match(/^\{([^{}]+)\}$/);
+      let varName: string | null = null;
       if (match) {
-        const varName = match[1].trim().toLowerCase();
+        varName = match[1].trim().toLowerCase();
+      } else if (/^(foto|photo|gambar|image|avatar|pic|picture|pasfoto)$/i.test(descr)) {
+        varName = descr.trim().toLowerCase();
+      }
+      if (varName) {
+        variablesSet.add(varName);
+        imageVarsSet.add(varName);
+      }
+    }
+
+    // Also check for image placeholders in legacy VML shapes: <v:shape ... alt="{{foto}}" or title="{{foto}}">
+    const vmlShapeRegex = /<v:shape[^>]+(?:alt|title|name)=["']([^"']+)["'][^>]*>/gi;
+    let vmlMatch: RegExpExecArray | null;
+    while ((vmlMatch = vmlShapeRegex.exec(content)) !== null) {
+      const alt = vmlMatch[1].trim();
+      const match =
+        alt.match(/^\{\{([^{}]+)\}\}$/) ||
+        alt.match(/^\{%([^{}]+)\}$/) ||
+        alt.match(/^<<([^<>]+)>>$/) ||
+        alt.match(/^\{([^{}]+)\}$/);
+      let varName: string | null = null;
+      if (match) {
+        varName = match[1].trim().toLowerCase();
+      } else if (/^(foto|photo|gambar|image|avatar|pic|picture|pasfoto)$/i.test(alt)) {
+        varName = alt.trim().toLowerCase();
+      }
+      if (varName) {
         variablesSet.add(varName);
         imageVarsSet.add(varName);
       }
@@ -341,6 +372,100 @@ export async function ensureContentType(zip: JSZip, ext: string): Promise<void> 
 }
 
 /**
+ * Helper to check if an alt/title/name attribute matches an image tag
+ */
+function attributeMatchesTag(attrValue: string, targetTag: string): boolean {
+  const cleanVal = attrValue.trim().toLowerCase();
+  const cleanTarget = targetTag.trim().toLowerCase();
+  if (cleanVal === cleanTarget) return true;
+  if (cleanVal === `{{${cleanTarget}}}`) return true;
+  if (cleanVal === `{%${cleanTarget}}`) return true;
+  if (cleanVal === `<<${cleanTarget}>>`) return true;
+  if (cleanVal === `{${cleanTarget}}`) return true;
+  if (cleanVal.includes(`{{${cleanTarget}}}`)) return true;
+  if (cleanVal.includes(`{%${cleanTarget}}`)) return true;
+  if (cleanVal.includes(`<<${cleanTarget}>>`)) return true;
+  return false;
+}
+
+/**
+ * Replace dummy image placeholders (DrawingML <w:drawing> and VML <w:pict>) with the actual recipient photo relationship ID.
+ * This preserves all existing shape styling, borders, dimensions, wrapping, and exact page positioning.
+ */
+export function replaceDummyImagesInXml(
+  xmlContent: string,
+  imageTagToRelId: Map<string, string>
+): { xml: string; replacedTags: Set<string> } {
+  const replacedTags = new Set<string>();
+  let result = xmlContent;
+
+  // 1. DrawingML: <w:drawing> ... </w:drawing>
+  result = result.replace(/<w:drawing\b[\s\S]*?<\/w:drawing>/gi, (drawingXml) => {
+    // Extract wp:docPr tag
+    const docPrMatch = /<wp:docPr\b[^>]*>/i.exec(drawingXml);
+    if (!docPrMatch) return drawingXml;
+
+    const docPrTag = docPrMatch[0];
+    const attrRegex = /\b(?:descr|name|title)=["']([^"']*)["']/gi;
+    const attrValues: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = attrRegex.exec(docPrTag)) !== null) {
+      if (m[1].trim()) attrValues.push(m[1].trim());
+    }
+
+    for (const [tag, relId] of imageTagToRelId.entries()) {
+      const isMatched = attrValues.some((v) => attributeMatchesTag(v, tag));
+      if (isMatched) {
+        // Replace <a:blip ... r:embed="..."/>
+        if (/<a:blip\b[^>]*\br:embed="[^"]+"/i.test(drawingXml)) {
+          const updatedDrawing = drawingXml.replace(
+            /(<a:blip\b[^>]*?\br:embed=")[^"]+(")/i,
+            `$1${relId}$2`
+          );
+          replacedTags.add(tag.toLowerCase());
+          return updatedDrawing;
+        }
+      }
+    }
+
+    return drawingXml;
+  });
+
+  // 2. VML Shapes: <w:pict> ... </w:pict>
+  result = result.replace(/<w:pict\b[\s\S]*?<\/w:pict>/gi, (pictXml) => {
+    const vmlShapeMatch = /<v:shape\b[^>]*>/i.exec(pictXml);
+    if (!vmlShapeMatch) return pictXml;
+
+    const shapeTag = vmlShapeMatch[0];
+    const attrRegex = /\b(?:alt|title|name|id)=["']([^"']*)["']/gi;
+    const attrValues: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = attrRegex.exec(shapeTag)) !== null) {
+      if (m[1].trim()) attrValues.push(m[1].trim());
+    }
+
+    for (const [tag, relId] of imageTagToRelId.entries()) {
+      const isMatched = attrValues.some((v) => attributeMatchesTag(v, tag));
+      if (isMatched) {
+        // Replace <v:imagedata ... r:id="..."/>
+        if (/<v:imagedata\b[^>]*\br:id="[^"]+"/i.test(pictXml)) {
+          const updatedPict = pictXml.replace(
+            /(<v:imagedata\b[^>]*?\br:id=")[^"]+(")/i,
+            `$1${relId}$2`
+          );
+          replacedTags.add(tag.toLowerCase());
+          return updatedPict;
+        }
+      }
+    }
+
+    return pictXml;
+  });
+
+  return { xml: result, replacedTags };
+}
+
+/**
  * Generate a single DOCX document from template and row data
  */
 export async function generateSingleDocx(
@@ -362,6 +487,8 @@ export async function generateSingleDocx(
   let nextRelIdIndex = 9000 + rowIndex * 10;
   let uniqueDocId = 50000 + rowIndex * 10;
 
+  const tagToRelId = new Map<string, string>();
+
   for (const [tag, imgBuffer] of imageFiles.entries()) {
     const ext = detectImageExtension(imgBuffer);
     await ensureContentType(zip, ext);
@@ -374,6 +501,8 @@ export async function generateSingleDocx(
       const relEntry = `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/nb_photo_${rowIndex}_${uniqueDocId}.${ext}"/>`;
       relsXml = relsXml.replace('</Relationships>', `  ${relEntry}\n</Relationships>`);
     }
+
+    tagToRelId.set(tag.toLowerCase(), relId);
 
     const drawingXml = buildInlineImageDrawingXml(
       relId,
@@ -398,13 +527,29 @@ export async function generateSingleDocx(
     );
   });
 
+  const replacedDummyTags = new Set<string>();
+
   for (const partName of xmlParts) {
     const file = zip.file(partName);
     if (!file) continue;
     let xmlContent = await file.async('text');
 
+    // 1. Replace any dummy images/shapes with matching Alt Text first
+    const { xml: updatedXml, replacedTags } = replaceDummyImagesInXml(xmlContent, tagToRelId);
+    xmlContent = updatedXml;
+    replacedTags.forEach((t) => replacedDummyTags.add(t));
+
+    // 2. Filter imageReplacements: if tag was already replaced in a dummy image, do not insert text drawing
+    const remainingTextReplacements = new Map<string, string>();
+    for (const [tag, drawing] of imageReplacements.entries()) {
+      if (!replacedDummyTags.has(tag.toLowerCase())) {
+        remainingTextReplacements.set(tag, drawing);
+      }
+    }
+
+    // 3. Process text paragraphs for text variables and inline image tag fallbacks
     xmlContent = xmlContent.replace(/<w:p\b[^>]*>([\s\S]*?)<\/w:p>/gi, (pFull) => {
-      return processParagraphPlaceholders(pFull, data, imageReplacements);
+      return processParagraphPlaceholders(pFull, data, remainingTextReplacements);
     });
 
     zip.file(partName, xmlContent);

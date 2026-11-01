@@ -692,7 +692,7 @@ export function MailMergeStudio() {
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    <span>{'{{foto}}'}</span> — Foto atau pas foto identitas
+                    <span>{'{{foto}}'}</span> — Foto penerima (teks atau Gambar Dummy Alt Text)
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -700,7 +700,7 @@ export function MailMergeStudio() {
                   </div>
                 </div>
                 <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  Format tabel, jenis font, ukuran teks, kop surat, dan warna teks template akan dipertahankan secara utuh.
+                  <b>Tips Foto:</b> Anda bisa mengetik teks <code className="text-blue-500 font-mono">{'{{foto}}'}</code>, ATAU memasukkan gambar dummy di Word lalu isi Alt Text dengan <code className="text-blue-500 font-mono">{'{{foto}}'}</code> agar ukuran, bingkai, dan posisinya persis seperti di Word.
                 </p>
               </div>
             </div>
@@ -1212,9 +1212,14 @@ export function MailMergeStudio() {
 
               {/* Photo Dimensions & Fallback Settings */}
               <div className="p-5 rounded-3xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 space-y-4">
-                <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                  Pengaturan Ukuran & Penempatan Foto di Dokumen:
-                </span>
+                <div className="space-y-1">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                    Pengaturan Ukuran & Penempatan Foto di Dokumen:
+                  </span>
+                  <p className="text-[11px] text-slate-500">
+                    Pengaturan cm ini berlaku untuk placeholder teks <code className="text-blue-500 font-mono">{'{{foto}}'}</code>. Jika template Anda menggunakan <b>Gambar Dummy (Alt Text)</b>, ukuran dan posisi akan otomatis mengikuti gambar dummy di Word.
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block mb-1">

@@ -16,6 +16,7 @@ import {
   Trash2,
   CheckCircle2
 } from 'lucide-react';
+import { useToast } from '@/components/common/Toast';
 
 interface BulkDesignSettingsProps {
   design: BulkDesignConfig;
@@ -33,6 +34,7 @@ const TABS: { id: TabType; label: string; icon: React.ElementType }[] = [
 ];
 
 export function BulkDesignSettings({ design, onChange }: BulkDesignSettingsProps) {
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('colors');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -64,7 +66,7 @@ export function BulkDesignSettings({ design, onChange }: BulkDesignSettingsProps
   const handleFileUpload = (file: File) => {
     if (!file) return;
     if (!file.type.match(/image\/(png|jpeg|jpg|svg\+xml|webp)/i)) {
-      alert('Format file harus berupa PNG, JPG, WebP, atau SVG.');
+      showToast('Format file harus berupa PNG, JPG, WebP, atau SVG.', 'error');
       return;
     }
 

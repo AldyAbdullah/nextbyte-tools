@@ -65,7 +65,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 sm:pt-20 px-3 sm:px-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
         className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -90,7 +90,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
         </div>
 
         {/* Results List */}
-        <div className="max-h-96 overflow-y-auto p-2 divide-y divide-slate-100 dark:divide-slate-800/60">
+        <div className="max-h-[60vh] sm:max-h-96 overflow-y-auto p-2 divide-y divide-slate-100 dark:divide-slate-800/60">
           {filteredTools.length === 0 ? (
             <div className="py-12 text-center text-slate-500 text-sm">
               Tidak ada tools yang cocok dengan &ldquo;{query}&rdquo;

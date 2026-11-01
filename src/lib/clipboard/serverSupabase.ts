@@ -98,13 +98,26 @@ export async function uploadClipboardFile(
   const filePath = `files/${randomName}`;
 
   try {
-    const { error: uploadError } = await supabase.storage
+    let { error: uploadError } = await supabase.storage
       .from(CLIPBOARD_BUCKET)
       .upload(filePath, buffer, {
         contentType: mimeType || 'application/octet-stream',
         cacheControl: '3600',
         upsert: false,
       });
+
+    // If bucket restrictions reject the specific mime type, retry with generic application/octet-stream
+    if (uploadError && (uploadError.message?.toLowerCase().includes('mime type') || uploadError.message?.toLowerCase().includes('not supported'))) {
+      console.warn(`MIME type "${mimeType}" rejected by bucket, retrying with application/octet-stream...`);
+      const retryResult = await supabase.storage
+        .from(CLIPBOARD_BUCKET)
+        .upload(filePath, buffer, {
+          contentType: 'application/octet-stream',
+          cacheControl: '3600',
+          upsert: true,
+        });
+      uploadError = retryResult.error;
+    }
 
     if (uploadError) {
       console.error('Supabase Storage upload error:', uploadError);
@@ -150,14 +163,30 @@ export async function getSignedImageUrl(
       .createSignedUrl(filePath, validSeconds);
 
     if (error || !data?.signedUrl) {
-      console.warn('Failed to generate signed file URL:', error?.message);
-      return null;
+      console.warn('Failed to generate signed file URL, falling back to public URL:', error?.message);
+      const { data: pubData } = supabase.storage
+        .from(CLIPBOARD_BUCKET)
+        .getPublicUrl(filePath);
+      return pubData?.publicUrl || null;
     }
 
-    return data.signedUrl;
+    let signedUrl = data.signedUrl;
+    if (signedUrl.startsWith('/')) {
+      const { url } = getEffectiveSupabaseConfig();
+      signedUrl = `${url}${signedUrl}`;
+    }
+
+    return signedUrl;
   } catch (err) {
-    console.warn('Error creating signed file URL:', err);
-    return null;
+    console.warn('Error creating signed file URL, falling back to public URL:', err);
+    try {
+      const { data: pubData } = supabase.storage
+        .from(CLIPBOARD_BUCKET)
+        .getPublicUrl(filePath);
+      return pubData?.publicUrl || null;
+    } catch {
+      return null;
+    }
   }
 }
 

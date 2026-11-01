@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { QrLogoConfig, ErrorCorrectionLevel } from '@/types/qrcode';
 import { PRESET_ICONS } from '@/constants/presetIcons';
 import { UploadCloud, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
+import { useToast } from '@/components/common/Toast';
 
 interface LogoTabProps {
   logo: QrLogoConfig;
@@ -18,13 +19,14 @@ export function LogoTab({
   onChange,
   onUpdateErrorCorrection,
 }: LogoTabProps) {
+  const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const handleFileUpload = (file: File) => {
     if (!file) return;
     if (!file.type.match(/image\/(png|jpeg|jpg|svg\+xml|webp)/i)) {
-      alert('Format file harus berupa PNG, JPG, WebP, atau SVG.');
+      showToast('Format file harus berupa PNG, JPG, WebP, atau SVG.', 'error');
       return;
     }
 

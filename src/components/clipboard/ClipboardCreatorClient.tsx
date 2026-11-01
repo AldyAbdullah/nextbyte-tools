@@ -28,6 +28,7 @@ import {
   Paperclip,
   Settings2,
   ExternalLink,
+  Plus,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import { validateSlug, sanitizeSlug, generateRandomSlug } from '@/lib/clipboard/slug';
@@ -41,9 +42,9 @@ const EXPIRY_OPTIONS: Array<{ value: ClipboardExpiry; label: string; desc: strin
   { value: '12h', label: '12 Jam', desc: 'Batas simpan maksimal' },
 ];
 
-const MAX_FILES = 5;
+const MAX_FILES = 2; // Maksimal 2 file
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
-const MAX_TOTAL_FILES_BYTES = 25 * 1024 * 1024; // 25 MB
+const MAX_TOTAL_FILES_BYTES = 20 * 1024 * 1024; // 20 MB (2 file x 10 MB)
 const MAX_TEXT_BYTES = 100 * 1024; // 100 KB
 
 interface LocalFileAttachment {
@@ -141,7 +142,21 @@ export function ClipboardCreatorClient() {
       let currentTotalSize = prev.reduce((sum, item) => sum + item.size, 0);
 
       for (const file of fileArray) {
-        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        let ext = file.name.split('.').pop()?.toLowerCase() || '';
+        let fileName = file.name;
+
+        // If file has no recognized extension but has valid MIME type (e.g. pasted screenshots named 'image' or 'blob')
+        if ((!ext || ext === 'blob' || ext === 'image' || !allowedExts.includes(ext)) && file.type) {
+          if (file.type === 'image/png') ext = 'png';
+          else if (file.type === 'image/jpeg' || file.type === 'image/jpg') ext = 'jpg';
+          else if (file.type === 'image/webp') ext = 'webp';
+          else if (file.type === 'application/pdf') ext = 'pdf';
+
+          if (['png', 'jpg', 'webp', 'pdf'].includes(ext)) {
+            fileName = file.name.includes('.') ? file.name : `gambar-${Date.now()}.${ext}`;
+          }
+        }
+
         if (!allowedExts.includes(ext)) {
           showToast(`Format "${file.name}" tidak didukung. Didukung: Gambar (JPG, PNG, WebP) & Dokumen (PDF, Word, Excel, PPT).`, 'error');
           continue;
@@ -153,18 +168,18 @@ export function ClipboardCreatorClient() {
         }
 
         if (currentTotalSize + file.size > MAX_TOTAL_FILES_BYTES) {
-          showToast('Total ukuran berkas melebihi batas maksimal 25 MB.', 'error');
+          showToast('Total ukuran berkas melebihi batas maksimal 20 MB.', 'error');
           break;
         }
 
         currentTotalSize += file.size;
-        const fileType = detectFileType(file.name, file.type);
+        const fileType = detectFileType(fileName, file.type);
         const previewUrl = fileType === 'image' ? URL.createObjectURL(file) : undefined;
 
         newItems.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           file,
-          name: file.name,
+          name: fileName,
           size: file.size,
           type: fileType,
           previewUrl,
@@ -213,7 +228,7 @@ export function ClipboardCreatorClient() {
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement;
-      // If user is typing in input, don't hijack
+      // If user is typing in regular input (e.g. slug or password), don't hijack
       if (target && target.tagName === 'INPUT') return;
 
       const items = e.clipboardData?.items;
@@ -230,6 +245,7 @@ export function ClipboardCreatorClient() {
       }
 
       if (pastedFiles.length > 0) {
+        e.preventDefault();
         handleAddFiles(pastedFiles);
       }
     };
@@ -283,9 +299,9 @@ export function ClipboardCreatorClient() {
       formData.append('slug', slug.trim().toLowerCase());
       if (hasText) formData.append('textContent', textContent);
 
-      // Append multi-attachments
+      // Append multi-attachments with custom sanitized filename
       attachments.forEach((att) => {
-        formData.append('files', att.file);
+        formData.append('files', att.file, att.name);
       });
 
       formData.append('expiry', expiry);
@@ -432,13 +448,16 @@ export function ClipboardCreatorClient() {
 
       {/* ERROR ALERT BOX */}
       {errorMessage && (
-        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs sm:text-sm flex items-start gap-3 animate-in fade-in">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs sm:text-sm flex items-start gap-2.5 sm:gap-3 animate-in fade-in">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-          <div className="flex-1 font-medium">{errorMessage}</div>
+          <div className="flex-1 font-medium min-w-0 break-words [overflow-wrap:anywhere] leading-relaxed">
+            {errorMessage}
+          </div>
           <button
             type="button"
             onClick={() => setErrorMessage('')}
-            className="p-1 hover:text-rose-900 dark:hover:text-rose-100 transition-colors"
+            className="p-1 hover:text-rose-900 dark:hover:text-rose-100 transition-colors shrink-0 -mr-1 -mt-0.5"
+            aria-label="Tutup pesan error"
           >
             <X className="w-4 h-4" />
           </button>
@@ -513,7 +532,7 @@ export function ClipboardCreatorClient() {
 
             {/* ATTACHMENT CARD (EXPANDED FOR IMAGES & DOCUMENTS) */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-5">
-              <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                     <Paperclip className="w-3.5 h-3.5" />
@@ -528,9 +547,26 @@ export function ClipboardCreatorClient() {
                   </div>
                 </div>
 
-                <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                  {attachments.length}/{MAX_FILES} berkas
-                </span>
+                <div className="flex items-center gap-2">
+                  {attachments.length > 0 && attachments.length < MAX_FILES && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/70 hover:bg-blue-100 dark:hover:bg-blue-900/80 text-blue-600 dark:text-blue-400 text-xs font-bold transition-all border border-blue-200 dark:border-blue-800 shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah Berkas</span>
+                    </button>
+                  )}
+
+                  <span className={`text-xs font-mono font-semibold px-2.5 py-1 rounded-full ${
+                    attachments.length === MAX_FILES
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  }`}>
+                    {attachments.length}/{MAX_FILES} berkas {attachments.length === MAX_FILES && '(Maksimal)'}
+                  </span>
+                </div>
               </div>
 
               {/* Hidden File Input */}
@@ -547,8 +583,8 @@ export function ClipboardCreatorClient() {
                 id="clipboard-multi-file-input"
               />
 
-              {/* Dropzone Area */}
-              {attachments.length < MAX_FILES && (
+              {/* KONDISI 1: Belum ada berkas terlampir -> Tampilkan Dropzone besar */}
+              {attachments.length === 0 ? (
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -571,18 +607,16 @@ export function ClipboardCreatorClient() {
                       Mendukung <strong>Gambar</strong> (JPG, PNG, WebP) &amp; <strong>Dokumen</strong> (PDF, Word, Excel, PPT)
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      Maks. 10 MB per berkas • Total maks. 25 MB • Bisa juga tekan <kbd className="font-mono bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">Ctrl+V</kbd>
+                      Maks. 10 MB per berkas • Maksimal 2 berkas • Bisa juga tekan <kbd className="font-mono bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">Ctrl+V</kbd>
                     </p>
                   </div>
                 </div>
-              )}
-
-              {/* Attachments List */}
-              {attachments.length > 0 && (
-                <div className="space-y-2.5 pt-1">
+              ) : (
+                /* KONDISI 2: Sudah ada berkas terlampir -> Area langsung menjadi daftar berkas terinput */
+                <div className="space-y-3 pt-1">
                   <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-                    <span>Daftar lampiran ({attachments.length} berkas):</span>
-                    <span className="font-mono">{formatBytes(totalAttachmentsSize)} / 25 MB</span>
+                    <span>Berkas terlampir ({attachments.length} berkas):</span>
+                    <span className="font-mono">{formatBytes(totalAttachmentsSize)} / 20 MB</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -638,6 +672,34 @@ export function ClipboardCreatorClient() {
                         </button>
                       </div>
                     ))}
+
+                    {/* Slot Tambah Berkas ke-2 jika baru 1 berkas terpasang */}
+                    {attachments.length === 1 && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`flex items-center justify-center gap-2.5 p-3 rounded-2xl border-2 border-dashed transition-all cursor-pointer min-h-[66px] ${
+                          isDragging
+                            ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 ring-2 ring-blue-500/20'
+                            : 'border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 bg-slate-50/40 dark:bg-slate-950/20 text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                          <Plus className="w-4 h-4" />
+                        </div>
+                        <div className="text-left min-w-0">
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                            Tambah Berkas ke-2
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Klik atau seret berkas (Maks. 10 MB)
+                          </p>
+                        </div>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -870,8 +932,8 @@ export function ClipboardCreatorClient() {
             </div>
 
             {/* Link Copy Box */}
-            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-              <span className="text-xs sm:text-sm font-mono font-bold text-blue-600 dark:text-blue-400 truncate">
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 min-w-0">
+              <span className="text-xs sm:text-sm font-mono font-bold text-blue-600 dark:text-blue-400 truncate min-w-0 flex-1 text-left">
                 {createdData.url}
               </span>
               <button
