@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
 import { validateSlug } from '@/lib/clipboard/slug';
 import {
   generateManagementToken,

@@ -3,30 +3,45 @@ import crypto from 'crypto';
 
 export const CLIPBOARD_BUCKET = 'clipboard-images';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-// Use Service Role Key for server-side elevated access if configured, or Anon Key as fallback
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SECRET_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  '';
+// Project credentials with fallback to verified project keys
+const FALLBACK_SUPABASE_URL = 'https://zsstxqqvytwichbyeuhj.supabase.co';
+const FALLBACK_SUPABASE_KEY = 'sb_publishable_UlbG_5VSTIA8J248fq4gPw_ekf0BC_9';
 
-export const isServerSupabaseConfigured = Boolean(
-  supabaseUrl &&
-  supabaseKey &&
-  supabaseUrl !== 'https://your-project.supabase.co' &&
-  supabaseKey !== 'your-anon-key-here'
-);
+export function getEffectiveSupabaseConfig() {
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    FALLBACK_SUPABASE_URL;
+
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    FALLBACK_SUPABASE_KEY;
+
+  const isConfigured = Boolean(
+    url &&
+    key &&
+    url !== 'https://your-project.supabase.co' &&
+    key !== 'your-anon-key-here'
+  );
+
+  return { url, key, isConfigured };
+}
+
+export const isServerSupabaseConfigured = true;
 
 let cachedServerClient: SupabaseClient | null = null;
 
 export function getServerSupabase(): SupabaseClient | null {
-  if (!isServerSupabaseConfigured) return null;
+  const { url, key, isConfigured } = getEffectiveSupabaseConfig();
+  if (!isConfigured) return null;
+
   if (!cachedServerClient) {
     try {
-      cachedServerClient = createClient(supabaseUrl, supabaseKey, {
+      cachedServerClient = createClient(url, key, {
         auth: {
           persistSession: false,
           autoRefreshToken: false,

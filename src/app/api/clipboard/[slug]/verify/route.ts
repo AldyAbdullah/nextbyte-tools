@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
 import { getServerSupabase, getSignedImageUrl } from '@/lib/clipboard/serverSupabase';
 import { verifyPassword, verifyManagementToken } from '@/lib/clipboard/security';
 import { ClipboardItem } from '@/types/clipboard';
