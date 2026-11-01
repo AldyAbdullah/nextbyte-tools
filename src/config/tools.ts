@@ -39,8 +39,8 @@ export const TOOLS_REGISTRY: ToolItem[] = [
   },
   {
     id: 'nextbyte-clipboard',
-    name: 'Nextbyte Clipboard',
-    slug: 'clipboard',
+    name: 'Nextbyte Clip',
+    slug: 'clip',
     description: 'Simpan dan bagikan catatan teks, cuplikan kode, atau gambar antarperangkat secara instan lewat custom URL unik tanpa login dengan masa berlaku fleksibel.',
     category: 'Utility',
     status: 'available',

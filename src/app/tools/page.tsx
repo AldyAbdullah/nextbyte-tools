@@ -133,7 +133,7 @@ export default function AllToolsPage() {
           return (
             <Link
               key={tool.id}
-              href={tool.slug === 'send' ? '/send' : tool.slug === 'clipboard' ? '/clipboard' : `/tools/${tool.slug}`}
+              href={tool.slug === 'send' ? '/send' : (tool.slug === 'clip' || tool.slug === 'clipboard') ? '/clip' : `/tools/${tool.slug}`}
               className={`p-6 rounded-3xl transition-all flex flex-col justify-between group ${
                 isAvailable
                   ? 'bg-white dark:bg-slate-900 border-2 border-blue-500/40 hover:border-blue-500 shadow-xl shadow-blue-500/5 hover:shadow-blue-500/15'

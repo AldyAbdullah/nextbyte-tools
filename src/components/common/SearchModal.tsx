@@ -103,7 +103,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
               return (
                 <Link
                   key={tool.id}
-                  href={tool.slug === 'send' ? '/send' : tool.slug === 'clipboard' ? '/clipboard' : `/tools/${tool.slug}`}
+                  href={tool.slug === 'send' ? '/send' : (tool.slug === 'clip' || tool.slug === 'clipboard') ? '/clip' : `/tools/${tool.slug}`}
                   onClick={onClose}
                   className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-all group"
                 >

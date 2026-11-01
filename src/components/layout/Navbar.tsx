@@ -127,8 +127,8 @@ const TOOL_CATEGORIES: NavCategory[] = [
         iconBg: 'bg-cyan-50 dark:bg-cyan-950/60',
       },
       {
-        name: 'Nextbyte Clipboard',
-        href: '/clipboard',
+        name: 'Nextbyte Clip',
+        href: '/clip',
         desc: 'Bagikan teks & gambar via URL unik',
         icon: Clipboard,
         badge: 'Baru',
@@ -198,7 +198,7 @@ export function Navbar() {
 
   const isToolsActive = pathname.startsWith('/tools');
   const isSendActive = pathname === '/send' || pathname.startsWith('/send') || pathname === '/receive';
-  const isClipboardActive = pathname.startsWith('/clipboard');
+  const isClipboardActive = pathname.startsWith('/clip') || pathname.startsWith('/clipboard');
   const isAboutActive = pathname === '/about';
 
   return (
@@ -352,7 +352,7 @@ export function Navbar() {
 
             {/* Nextbyte Clipboard Nav Link */}
             <Link
-              href="/clipboard"
+              href="/clip"
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all ${
                 isClipboardActive
                   ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 shadow-sm shadow-blue-500/5'
@@ -445,7 +445,7 @@ export function Navbar() {
               </Link>
 
               <Link
-                href="/clipboard"
+                href="/clip"
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold ${
                   isClipboardActive

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Clipboard,
   UploadCloud,
@@ -34,7 +35,11 @@ const EXPIRY_OPTIONS: Array<{ value: ClipboardExpiry; label: string; desc: strin
 ];
 
 export function ClipboardCreatorClient() {
+  const router = useRouter();
   const { showToast } = useToast();
+
+  // Quick Open state for opening on another device
+  const [quickOpenSlug, setQuickOpenSlug] = useState<string>('');
 
   // Form states
   const [slug, setSlug] = useState<string>('');
@@ -166,6 +171,15 @@ export function ClipboardCreatorClient() {
     const generated = generateRandomSlug();
     setSlug(generated);
     setSlugTouched(true);
+  };
+
+  // Quick Open on another computer
+  const handleQuickOpen = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = sanitizeSlug(quickOpenSlug.trim().toLowerCase());
+    if (clean) {
+      router.push(`/clip/${clean}`);
+    }
   };
 
   // Handle Form Submission
@@ -311,6 +325,38 @@ export function ClipboardCreatorClient() {
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
           A simple way to share text and images between your devices. Bagikan catatan, cuplikan kode, atau gambar via URL khusus tanpa login.
         </p>
+
+        {/* QUICK OPEN BAR (Mudah dibuka di komputer/laptop lain tanpa ketik panjang) */}
+        <div className="pt-2 max-w-lg mx-auto">
+          <div className="bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 shadow-sm flex items-center justify-between gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400">
+                /clip/
+              </span>
+              <input
+                type="text"
+                value={quickOpenSlug}
+                onChange={(e) => setQuickOpenSlug(sanitizeSlug(e.target.value))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleQuickOpen(e);
+                  }
+                }}
+                placeholder="nama-clip-kamu"
+                className="w-full pl-12 pr-3 py-2 rounded-xl text-xs sm:text-sm font-mono font-bold bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleQuickOpen}
+              disabled={!quickOpenSlug.trim()}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs transition-colors shrink-0 shadow-sm"
+            >
+              Buka Clip
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* 2. FORM CONTAINER */}
@@ -347,7 +393,7 @@ export function ClipboardCreatorClient() {
           <div className="space-y-2">
             <div className="flex items-center rounded-2xl border bg-slate-50/70 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 overflow-hidden transition-all">
               <span className="pl-4 pr-1 text-xs sm:text-sm text-slate-400 font-mono select-none truncate">
-                nextbyte.biz.id/clipboard/
+                nextbyte.biz.id/clip/
               </span>
               <input
                 type="text"
@@ -694,10 +740,10 @@ export function ClipboardCreatorClient() {
             {/* Action Buttons */}
             <div className="space-y-2 pt-2">
               <Link
-                href={`/clipboard/${createdData.slug}`}
+                href={`/clip/${createdData.slug}`}
                 className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition-all"
               >
-                <span>Buka Halaman Clipboard</span>
+                <span>Buka Halaman Clip</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
 

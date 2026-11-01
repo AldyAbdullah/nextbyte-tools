@@ -242,7 +242,7 @@ export async function POST(req: NextRequest) {
 
     const host = req.headers.get('host') || 'nextbyte.biz.id';
     const proto = req.headers.get('x-forwarded-proto') || 'https';
-    const fullUrl = `${proto}://${host}/clipboard/${cleanSlug}`;
+    const fullUrl = `${proto}://${host}/clip/${cleanSlug}`;
 
     return NextResponse.json({
       success: true,

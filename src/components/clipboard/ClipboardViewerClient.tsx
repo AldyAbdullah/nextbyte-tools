@@ -323,11 +323,11 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
 
         <div className="pt-2">
           <Link
-            href="/clipboard"
+            href="/clip"
             className="inline-flex items-center gap-2 py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-md shadow-blue-500/20 transition-all"
           >
             <Clipboard className="w-4 h-4" />
-            <span>Buat Clipboard Baru</span>
+            <span>Buat Clip Baru</span>
           </Link>
         </div>
       </div>
@@ -398,9 +398,9 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
         </form>
 
         <div className="pt-4">
-          <Link href="/clipboard" className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-semibold inline-flex items-center gap-1.5">
+          <Link href="/clip" className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-semibold inline-flex items-center gap-1.5">
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Kembali ke Beranda Clipboard</span>
+            <span>Kembali ke Beranda Clip</span>
           </Link>
         </div>
       </div>
@@ -460,7 +460,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
           )}
 
           <Link
-            href="/clipboard"
+            href="/clip"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
           >
             <Clipboard className="w-4 h-4" />
