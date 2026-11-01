@@ -19,6 +19,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Code2,
+  Flame,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import { validateSlug, sanitizeSlug, generateRandomSlug } from '@/lib/clipboard/slug';
@@ -26,10 +27,10 @@ import type { ClipboardExpiry } from '@/types/clipboard';
 import confetti from 'canvas-confetti';
 
 const EXPIRY_OPTIONS: Array<{ value: ClipboardExpiry; label: string; desc: string }> = [
-  { value: '1h', label: '1 Jam', desc: 'Sangat privat, langsung terhapus' },
-  { value: '6h', label: '6 Jam', desc: 'Cocok untuk meeting / kelas' },
-  { value: '24h', label: '24 Jam', desc: 'Paling populer (Default)' },
-  { value: '7d', label: '7 Hari', desc: 'Penyimpanan jangka panjang' },
+  { value: '10m', label: '10 Menit', desc: 'Transfer cepat sekali pakai' },
+  { value: '1h', label: '1 Jam', desc: 'Sangat privat, cepat hilang' },
+  { value: '6h', label: '6 Jam', desc: 'Cocok untuk rapat / tugas' },
+  { value: '12h', label: '12 Jam', desc: 'Maksimal batas simpan (Default)' },
 ];
 
 export function ClipboardCreatorClient() {
@@ -40,7 +41,8 @@ export function ClipboardCreatorClient() {
   const [slugTouched, setSlugTouched] = useState<boolean>(false);
   const [textContent, setTextContent] = useState<string>('');
   const [isMonospace, setIsMonospace] = useState<boolean>(false);
-  const [expiry, setExpiry] = useState<ClipboardExpiry>('24h');
+  const [expiry, setExpiry] = useState<ClipboardExpiry>('12h');
+  const [burnAfterRead, setBurnAfterRead] = useState<boolean>(true); // Default: TRUE (Hapus otomatis setelah dibuka di perangkat lain)
   const [password, setPassword] = useState<string>('');
   const [showPasswordInput, setShowPasswordInput] = useState<boolean>(false);
   const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
@@ -199,6 +201,7 @@ export function ClipboardCreatorClient() {
       if (hasText) formData.append('textContent', textContent);
       if (hasImage && imageFile) formData.append('image', imageFile);
       formData.append('expiry', expiry);
+      formData.append('burnAfterRead', burnAfterRead ? 'true' : 'false');
       if (password.trim()) formData.append('password', password.trim());
 
       const res = await fetch('/api/clipboard/create', {
@@ -511,7 +514,42 @@ export function ClipboardCreatorClient() {
           )}
         </div>
 
-        {/* STEP 4: EXPIRY SETTINGS & PASSWORD */}
+        {/* STEP 4: BURN AFTER READ SETTING (Default: Aktif) */}
+        <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-red-500/10 border border-orange-200/80 dark:border-orange-900/50 rounded-3xl p-5 sm:p-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Flame className="w-5 h-5 text-orange-500 shrink-0" />
+                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  Hapus Otomatis Saat Dibuka di Perangkat Lain (Burn After Read)
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                  Default Aktif
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Saat tautan dibuka pertama kali oleh penerima di perangkat lain, konten langsung ditampilkan dan otomatis terhapus permanen dari server. Jika dinonaktifkan, clipboard akan tetap tersimpan hingga batas masa berlaku (maksimal 12 jam).
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setBurnAfterRead(!burnAfterRead)}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                burnAfterRead ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+              aria-label="Toggle Burn After Read"
+            >
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  burnAfterRead ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* STEP 5: EXPIRY SETTINGS & PASSWORD */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Expiry Selector */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3.5">

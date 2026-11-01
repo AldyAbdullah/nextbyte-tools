@@ -63,22 +63,25 @@ export function verifyPassword(password: string, storedPasswordHash: string): bo
  */
 export function calculateExpiresAt(expiry: ClipboardExpiry): Date {
   const now = Date.now();
-  let ms = 24 * 60 * 60 * 1000; // default 24h
+  let ms = 12 * 60 * 60 * 1000; // default 12h (maksimal 12 jam)
 
   switch (expiry) {
+    case '10m':
+      ms = 10 * 60 * 1000;
+      break;
     case '1h':
       ms = 1 * 60 * 60 * 1000;
       break;
     case '6h':
       ms = 6 * 60 * 60 * 1000;
       break;
-    case '24h':
-      ms = 24 * 60 * 60 * 1000;
-      break;
-    case '7d':
-      ms = 7 * 24 * 60 * 60 * 1000;
+    case '12h':
+    default:
+      ms = 12 * 60 * 60 * 1000;
       break;
   }
 
-  return new Date(now + ms);
+  // Maksimal disimpan 12 jam
+  const cappedMs = Math.min(ms, 12 * 60 * 60 * 1000);
+  return new Date(now + cappedMs);
 }

@@ -1,4 +1,4 @@
-export type ClipboardExpiry = '1h' | '6h' | '24h' | '7d';
+export type ClipboardExpiry = '10m' | '1h' | '6h' | '12h' | '24h' | '7d';
 
 export interface ClipboardItem {
   id: string;
@@ -10,6 +10,8 @@ export interface ClipboardItem {
   expiresAt: string;
   isPasswordProtected: boolean;
   hasManagementToken?: boolean;
+  burnAfterRead?: boolean; // If true, burns immediately after first read by a recipient
+  isBurned?: boolean; // Set true when delivered to recipient and purged from server
 }
 
 export interface CreateClipboardPayload {
@@ -17,6 +19,7 @@ export interface CreateClipboardPayload {
   textContent?: string;
   expiry: ClipboardExpiry;
   password?: string;
+  burnAfterRead?: boolean;
 }
 
 export interface CreateClipboardResponse {
@@ -25,6 +28,7 @@ export interface CreateClipboardResponse {
   url?: string;
   managementToken?: string;
   expiresAt?: string;
+  burnAfterRead?: boolean;
   error?: string;
 }
 

@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
 
     const { data: record, error } = await supabase
       .from('clipboards')
-      .select('id, slug, text_content, image_path, password_hash, management_token_hash, created_at, expires_at')
+      .select('*')
       .eq('slug', cleanSlug)
       .maybeSingle();
 
@@ -69,6 +69,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
     );
 
     const isPasswordProtected = Boolean(record.password_hash);
+    const isBurnAfterRead = record.burn_after_read !== false; // Default: true (Hapus setelah dibuka)
 
     // If password-protected, redact text and image URL until verified
     if (isPasswordProtected) {
@@ -84,6 +85,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
           expiresAt: record.expires_at,
           isPasswordProtected: true,
           hasManagementToken,
+          burnAfterRead: isBurnAfterRead,
+          isBurned: false,
         } as ClipboardItem,
       });
     }
@@ -92,6 +95,14 @@ export async function GET(req: NextRequest, context: RouteContext) {
     let signedUrl: string | null = null;
     if (record.image_path) {
       signedUrl = await getSignedImageUrl(record.image_path, expiresAt);
+    }
+
+    let isBurned = false;
+    // Jika dibuka di perangkat lain (tanpa token manajemen) dan mode burnAfterRead aktif:
+    if (isBurnAfterRead && !hasManagementToken) {
+      // Hapus langsung dari database agar tidak bisa dibuka lagi
+      await supabase.from('clipboards').delete().eq('id', record.id);
+      isBurned = true;
     }
 
     const item: ClipboardItem = {
@@ -104,6 +115,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
       expiresAt: record.expires_at,
       isPasswordProtected: false,
       hasManagementToken,
+      burnAfterRead: isBurnAfterRead,
+      isBurned,
     };
 
     return NextResponse.json({ success: true, item });

@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const { data: record, error } = await supabase
       .from('clipboards')
-      .select('id, slug, text_content, image_path, password_hash, management_token_hash, created_at, expires_at')
+      .select('*')
       .eq('slug', cleanSlug)
       .maybeSingle();
 
@@ -73,9 +73,18 @@ export async function POST(req: NextRequest, context: RouteContext) {
       clientToken && verifyManagementToken(clientToken, record.management_token_hash)
     );
 
+    const isBurnAfterRead = record.burn_after_read !== false; // Default: true
+
     let signedUrl: string | null = null;
     if (record.image_path) {
       signedUrl = await getSignedImageUrl(record.image_path, expiresAt);
+    }
+
+    let isBurned = false;
+    // Jika dibuka di perangkat penerima (tanpa token manajemen) dan mode burnAfterRead aktif:
+    if (isBurnAfterRead && !hasManagementToken) {
+      await supabase.from('clipboards').delete().eq('id', record.id);
+      isBurned = true;
     }
 
     const item: ClipboardItem = {
@@ -88,6 +97,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
       expiresAt: record.expires_at,
       isPasswordProtected: true,
       hasManagementToken,
+      burnAfterRead: isBurnAfterRead,
+      isBurned,
     };
 
     return NextResponse.json({ success: true, item });

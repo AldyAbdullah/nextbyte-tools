@@ -78,9 +78,10 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const rawSlug = formData.get('slug')?.toString() || '';
     const textContent = formData.get('textContent')?.toString() || '';
-    const expiry = (formData.get('expiry')?.toString() || '24h') as ClipboardExpiry;
+    const expiry = (formData.get('expiry')?.toString() || '12h') as ClipboardExpiry;
     const password = formData.get('password')?.toString() || '';
     const imageFile = formData.get('image') as File | null;
+    const burnAfterRead = formData.get('burnAfterRead') !== 'false'; // Default: True (Hapus setelah dibuka)
 
     // 1. Validate Slug
     const slugValidation = validateSlug(rawSlug);
@@ -196,15 +197,32 @@ export async function POST(req: NextRequest) {
     const passwordHash = password.trim() ? hashPassword(password.trim()) : null;
     const expiresAt = calculateExpiresAt(expiry);
 
-    // 7. Insert to Supabase DB
-    const { error: insertError } = await supabase.from('clipboards').insert({
+    // 7. Insert to Supabase DB (supports burn_after_read with fallback)
+    const recordPayload = {
       slug: cleanSlug,
       text_content: hasText ? textContent : null,
       image_path: uploadedImagePath,
       management_token_hash: managementTokenHash,
       password_hash: passwordHash,
+      burn_after_read: burnAfterRead,
       expires_at: expiresAt.toISOString(),
-    });
+    };
+
+    let { error: insertError } = await supabase.from('clipboards').insert(recordPayload);
+
+    // If column burn_after_read is missing from older migration, retry without it
+    if (insertError && insertError.message?.includes('burn_after_read')) {
+      const fallbackPayload = {
+        slug: cleanSlug,
+        text_content: hasText ? textContent : null,
+        image_path: uploadedImagePath,
+        management_token_hash: managementTokenHash,
+        password_hash: passwordHash,
+        expires_at: expiresAt.toISOString(),
+      };
+      const retryResult = await supabase.from('clipboards').insert(fallbackPayload);
+      insertError = retryResult.error;
+    }
 
     if (insertError) {
       console.error('Supabase insert clipboard error:', insertError);
@@ -230,6 +248,7 @@ export async function POST(req: NextRequest) {
       url: fullUrl,
       managementToken,
       expiresAt: expiresAt.toISOString(),
+      burnAfterRead,
     });
   } catch (err) {
     console.error('Unexpected error in create clipboard:', err);

@@ -19,6 +19,7 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  Flame,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import type { ClipboardItem as ClipboardItemData } from '@/types/clipboard';
@@ -311,11 +312,11 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
 
         <div className="space-y-2">
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {errorStatus === 410 ? 'Clipboard Telah Kedaluwarsa' : 'Clipboard Tidak Ditemukan'}
+            {errorStatus === 410 ? 'Clipboard Telah Dihapus / Kedaluwarsa' : 'Clipboard Tidak Ditemukan'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
             {errorStatus === 410
-              ? 'Tautan ini telah melewati batas masa berlakunya dan data telah dibersihkan secara aman.'
+              ? 'Tautan ini telah dibuka sebelumnya (Burn After Read) atau telah melewati batas masa berlakunya sehingga data telah dihapus permanen dari server.'
               : errorMessage || 'Tautan ini mungkin salah atau telah dihapus oleh pemiliknya.'}
           </p>
         </div>
@@ -330,6 +331,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
           </Link>
         </div>
       </div>
+
     );
   }
 
@@ -415,10 +417,17 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
             <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-900/80">
               Nextbyte Clipboard
             </span>
-            <span className="text-xs text-slate-400 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-blue-500" />
-              <span>{formatTimeLeft(item.expiresAt)}</span>
-            </span>
+            {item.isBurned ? (
+              <span className="text-xs text-orange-500 font-bold flex items-center gap-1">
+                <Flame className="w-3.5 h-3.5 text-orange-500" />
+                <span>Terhapus Otomatis (Burn After Read)</span>
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-blue-500" />
+                <span>{formatTimeLeft(item.expiresAt)}</span>
+              </span>
+            )}
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono truncate">
@@ -459,6 +468,19 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
           </Link>
         </div>
       </div>
+
+      {/* BURN AFTER READ NOTICE */}
+      {item.isBurned && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-orange-500/15 via-red-500/15 to-amber-500/15 border-2 border-orange-500/30 text-slate-900 dark:text-white space-y-1.5 shadow-lg shadow-orange-500/5 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-2 font-bold text-orange-600 dark:text-orange-400 text-sm">
+            <Flame className="w-4 h-4 animate-pulse text-orange-500" />
+            <span>Clipboard Ini Telah Terhapus Otomatis (Burn After Read)</span>
+          </div>
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            Karena tautan ini telah dibuka di perangkat Anda, data telah <strong>langsung dihapus secara permanen dari server</strong> untuk menjaga kerahasiaan. Pastikan Anda menyalin teks atau mengunduh gambar sekarang sebelum menutup halaman ini!
+          </p>
+        </div>
+      )}
 
       {/* CONTENT AREA */}
       <div className="space-y-6">
