@@ -29,6 +29,7 @@ import {
   triggerFileDownload,
   formatFileSize,
 } from '@/lib/imageSharpening';
+import { useToast } from '@/components/common/Toast';
 
 const DEFAULT_SETTINGS: SharpenSettings = {
   preset: 'balanced',
@@ -43,6 +44,7 @@ const DEFAULT_SETTINGS: SharpenSettings = {
 };
 
 export default function ImageSharpenerStudio() {
+  const { showToast } = useToast();
   const [items, setItems] = useState<SharpenImageItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SharpenSettings>(DEFAULT_SETTINGS);
@@ -55,8 +57,12 @@ export default function ImageSharpenerStudio() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sliderContainerRef = useRef<HTMLDivElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastProcessedKeyRef = useRef<string>('');
+  const itemsRef = useRef<SharpenImageItem[]>(items);
+  itemsRef.current = items;
 
   const activeItem = items.find((i) => i.id === selectedItemId) || items[0] || null;
+  const activeItemId = activeItem?.id;
 
   // Process a single item with current settings
   const reprocessItem = useCallback(
@@ -94,22 +100,31 @@ export default function ImageSharpenerStudio() {
     []
   );
 
-  // Debounced auto-reprocess when settings change
+  // Debounced auto-reprocess when settings or active item changes
   useEffect(() => {
-    if (!activeItem) return;
+    if (!activeItemId) return;
+
+    const settingsKey = `${activeItemId}_${JSON.stringify(settings)}`;
+    if (lastProcessedKeyRef.current === settingsKey) {
+      return;
+    }
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
     debounceTimerRef.current = setTimeout(() => {
-      reprocessItem(activeItem, settings);
+      const currentItem = itemsRef.current.find((i) => i.id === activeItemId);
+      if (!currentItem) return;
+
+      lastProcessedKeyRef.current = settingsKey;
+      reprocessItem(currentItem, settings);
     }, 200);
 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [settings, activeItem, reprocessItem]);
+  }, [activeItemId, settings, reprocessItem]);
 
   // Handle files selection
   const handleFiles = useCallback((files: FileList | File[]) => {
@@ -202,7 +217,7 @@ export default function ImageSharpenerStudio() {
       const zipBlob = await createSharpenedZip(readyItems);
       triggerFileDownload(zipBlob, `nextbyte-sharpened-${Date.now()}.zip`);
     } catch {
-      alert('Gagal membuat arsip ZIP. Silakan coba unduh satuan.');
+      showToast('Gagal membuat arsip ZIP. Silakan coba unduh satuan.', 'error');
     }
   };
 
@@ -399,13 +414,11 @@ export default function ImageSharpenerStudio() {
                   onTouchMove={handleTouchMove}
                   className="relative h-[380px] sm:h-[480px] w-full flex items-center justify-center select-none overflow-hidden cursor-ew-resize bg-slate-950 bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:16px_16px]"
                 >
-                  {/* Processing Badge */}
+                  {/* Processing Badge Indicator */}
                   {activeItem.status === 'processing' && (
-                    <div className="absolute inset-0 z-30 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center">
-                      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900 border border-cyan-500/40 text-cyan-300 text-xs font-semibold shadow-2xl">
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                        Mempertajam gambar...
-                      </div>
+                    <div className="absolute top-3 right-3 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/90 border border-cyan-500/50 text-cyan-300 text-xs font-semibold shadow-xl backdrop-blur-md animate-pulse">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      Memproses...
                     </div>
                   )}
 
@@ -434,14 +447,6 @@ export default function ImageSharpenerStudio() {
                         alt="Original View"
                         className="absolute inset-0 w-full h-full object-contain pointer-events-none transition-transform duration-150"
                         style={{ transform: `scale(${zoomLevel})` }}
-                        onError={() => {
-                          if (activeItem.originalFile) {
-                            const fresh = URL.createObjectURL(activeItem.originalFile);
-                            setItems((prev) =>
-                              prev.map((it) => (it.id === activeItem.id ? { ...it, originalUrl: fresh } : it))
-                            );
-                          }
-                        }}
                       />
                     </div>
                   )}
@@ -462,9 +467,11 @@ export default function ImageSharpenerStudio() {
                   <div className="absolute top-3 left-3 z-10 px-2 py-1 rounded bg-black/75 border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider backdrop-blur-md">
                     Asli (Sebelum)
                   </div>
-                  <div className="absolute top-3 right-3 z-10 px-2 py-1 rounded bg-cyan-600/90 border border-cyan-400/30 text-[10px] font-bold text-white uppercase tracking-wider backdrop-blur-md">
-                    Dipertajam (Sesudah)
-                  </div>
+                  {activeItem.status !== 'processing' && (
+                    <div className="absolute top-3 right-3 z-10 px-2 py-1 rounded bg-cyan-600/90 border border-cyan-400/30 text-[10px] font-bold text-white uppercase tracking-wider backdrop-blur-md">
+                      Dipertajam (Sesudah)
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer Controls / Single Download */}
