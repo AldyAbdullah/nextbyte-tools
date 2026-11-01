@@ -1,11 +1,24 @@
 export type ClipboardExpiry = '10m' | '1h' | '6h' | '12h' | '24h' | '7d';
 
+export type AttachmentType = 'image' | 'pdf' | 'word' | 'excel' | 'powerpoint' | 'file' | 'document';
+
+export interface ClipboardAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: AttachmentType;
+  mimeType: string;
+  path: string;
+  url?: string | null;
+}
+
 export interface ClipboardItem {
   id: string;
   slug: string;
   textContent: string | null;
-  imagePath: string | null;
-  imageUrl?: string | null; // Pre-signed private URL generated securely on server
+  imagePath: string | null; // legacy single image path
+  imageUrl?: string | null; // legacy single image url
+  attachments?: ClipboardAttachment[]; // new multi-file attachments (images & docs)
   createdAt: string;
   expiresAt: string;
   isPasswordProtected: boolean;
@@ -29,6 +42,7 @@ export interface CreateClipboardResponse {
   managementToken?: string;
   expiresAt?: string;
   burnAfterRead?: boolean;
+  attachmentsCount?: number;
   error?: string;
 }
 

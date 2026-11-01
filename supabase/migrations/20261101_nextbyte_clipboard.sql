@@ -33,8 +33,9 @@ CREATE TABLE IF NOT EXISTS public.clipboards (
     )
 );
 
--- Tambahkan kolom burn_after_read jika tabel sudah dibuat sebelumnya
+-- Tambahkan kolom burn_after_read dan attachments jika tabel sudah dibuat sebelumnya
 ALTER TABLE public.clipboards ADD COLUMN IF NOT EXISTS burn_after_read BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.clipboards ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
 
 -- 3. Indexes untuk pencarian instan dan query pembersihan
 CREATE INDEX IF NOT EXISTS idx_clipboards_slug ON public.clipboards (slug);
@@ -74,13 +75,31 @@ VALUES (
     'clipboard-images',
     'clipboard-images',
     false, -- Wajib PRIVATE (diakses via signed URL)
-    5242880, -- 5 MB
-    ARRAY['image/jpeg', 'image/png', 'image/webp']
+    10485760, -- 10 MB per file
+    ARRAY[
+      'image/jpeg', 'image/png', 'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    ]
 )
 ON CONFLICT (id) DO UPDATE SET
     public = false,
-    file_size_limit = 5242880,
-    allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp'];
+    file_size_limit = 10485760,
+    allowed_mime_types = ARRAY[
+      'image/jpeg', 'image/png', 'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    ];
 
 -- Storage policy untuk upload
 DROP POLICY IF EXISTS "Public upload clipboard images" ON storage.objects;

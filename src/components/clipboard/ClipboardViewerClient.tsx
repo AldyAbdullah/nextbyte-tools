@@ -14,18 +14,29 @@ import {
   AlertTriangle,
   ArrowLeft,
   FileText,
-  ImageIcon,
+  FileSpreadsheet,
+  Presentation,
+  FileImage,
+  File,
   RefreshCw,
   KeyRound,
   Eye,
   EyeOff,
   Flame,
+  Paperclip,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
-import type { ClipboardItem as ClipboardItemData } from '@/types/clipboard';
+import type { ClipboardItem as ClipboardItemData, ClipboardAttachment, AttachmentType } from '@/types/clipboard';
 
 interface ClipboardViewerClientProps {
   slug: string;
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
@@ -46,8 +57,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
   // Action states
   const [copiedText, setCopiedText] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
-  const [copiedImage, setCopiedImage] = useState<boolean>(false);
-  const [isCopyingImage, setIsCopyingImage] = useState<boolean>(false);
+  const [copiedImageId, setCopiedImageId] = useState<string | null>(null);
 
   // Deletion modal state
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
@@ -154,20 +164,14 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
   };
 
   // Copy Image Action via Clipboard API
-  const handleCopyImage = async () => {
-    if (!item?.imageUrl) return;
-
-    setIsCopyingImage(true);
+  const handleCopyImage = async (imageUrl: string, attachmentId: string) => {
     try {
-      const response = await fetch(item.imageUrl);
+      const response = await fetch(imageUrl);
       const blob = await response.blob();
 
-      // Check if browser supports ClipboardItem for images
       if (typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
-        // Some browsers require converting WebP/JPEG to PNG for clipboard writing
         let imageBlob = blob;
         if (blob.type !== 'image/png') {
-          // Convert to PNG via canvas if necessary
           imageBlob = await new Promise<Blob>((resolve, reject) => {
             const img = new Image();
             img.crossOrigin = 'anonymous';
@@ -184,7 +188,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
               }
             };
             img.onerror = reject;
-            img.src = item.imageUrl!;
+            img.src = imageUrl;
           });
         }
 
@@ -194,44 +198,39 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
           }),
         ]);
 
-        setCopiedImage(true);
+        setCopiedImageId(attachmentId);
         showToast('Gambar berhasil disalin ke papan klip!', 'success');
-        setTimeout(() => setCopiedImage(false), 2500);
+        setTimeout(() => setCopiedImageId(null), 2500);
       } else {
         throw new Error('ClipboardItem API not supported');
       }
-    } catch (err) {
-      console.warn('Copy image to clipboard not supported by browser:', err);
-      showToast('Browser ini tidak mendukung salin gambar langsung. Silakan gunakan tombol Unduh Gambar.', 'info');
-    } finally {
-      setIsCopyingImage(false);
+    } catch {
+      showToast('Browser tidak mendukung salin gambar langsung. Silakan klik Unduh Gambar.', 'info');
     }
   };
 
-  // Download Image Action
-  const handleDownloadImage = async () => {
-    if (!item?.imageUrl) return;
-
+  // Download File Action (Images or Documents)
+  const handleDownloadFile = async (url: string, fileName: string) => {
     try {
-      const res = await fetch(item.imageUrl);
+      const res = await fetch(url);
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `clipboard-${slug}.${blob.type.split('/')[1] || 'png'}`;
+      a.href = blobUrl;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
         if (document.body.contains(a)) document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(blobUrl);
       }, 1000);
-      showToast('Gambar berhasil diunduh!', 'success');
+      showToast(`Berkas "${fileName}" berhasil diunduh!`, 'success');
     } catch {
-      showToast('Gagal mengunduh gambar.', 'error');
+      window.open(url, '_blank');
     }
   };
 
-  // Delete Clipboard Action (Authorized via management token)
+  // Delete Clipboard Action
   const handleDeleteClipboard = async () => {
     const localToken = typeof window !== 'undefined'
       ? localStorage.getItem(`nb_mgmt_${slug}`) || ''
@@ -260,13 +259,12 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
         throw new Error(data.error || 'Gagal menghapus clipboard.');
       }
 
-      // Remove from localStorage
       try {
         localStorage.removeItem(`nb_mgmt_${slug}`);
       } catch {}
 
       showToast('Clipboard berhasil dihapus permanen!', 'success');
-      router.push('/clipboard');
+      router.push('/clip');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Terjadi kendala saat menghapus.';
       showToast(msg, 'error');
@@ -290,6 +288,41 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
       return `${hours} jam ${minutes} menit lagi`;
     }
     return `${minutes} menit lagi`;
+  };
+
+  // Helper icons
+  const renderAttachmentIcon = (type: AttachmentType) => {
+    switch (type) {
+      case 'image':
+        return <FileImage className="w-5 h-5 text-emerald-500 shrink-0" />;
+      case 'pdf':
+        return <FileText className="w-5 h-5 text-red-500 shrink-0" />;
+      case 'word':
+        return <FileText className="w-5 h-5 text-blue-500 shrink-0" />;
+      case 'excel':
+        return <FileSpreadsheet className="w-5 h-5 text-emerald-600 shrink-0" />;
+      case 'powerpoint':
+        return <Presentation className="w-5 h-5 text-amber-500 shrink-0" />;
+      default:
+        return <File className="w-5 h-5 text-slate-500 shrink-0" />;
+    }
+  };
+
+  const getFormatBadge = (type: AttachmentType) => {
+    switch (type) {
+      case 'image':
+        return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+      case 'pdf':
+        return 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border-red-200 dark:border-red-800';
+      case 'word':
+        return 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+      case 'excel':
+        return 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800';
+      case 'powerpoint':
+        return 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+      default:
+        return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+    }
   };
 
   // 1. LOADING SKELETON
@@ -331,12 +364,11 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
           </Link>
         </div>
       </div>
-
     );
   }
 
   // 3. PASSWORD PROTECTED UNLOCK STATE
-  if (item.isPasswordProtected && item.textContent === null && !item.imageUrl) {
+  if (item.isPasswordProtected && item.textContent === null && (!item.attachments || item.attachments.length === 0) && !item.imageUrl) {
     return (
       <div className="w-full max-w-md mx-auto px-4 py-16 text-center space-y-6 animate-in zoom-in-95 duration-200">
         <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-500 border border-amber-200 dark:border-amber-900/60 flex items-center justify-center mx-auto shadow-sm">
@@ -345,10 +377,10 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
 
         <div className="space-y-1.5">
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-            Clipboard Ini Dilindungi Sandi
+            Clipboard Dilindungi Kata Sandi
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Pembuat clipboard <span className="font-mono text-blue-600 font-bold">/{slug}</span> menyematkan kata sandi untuk membuka konten ini.
+            Pembuat clip <span className="font-mono text-blue-600 font-bold">/{slug}</span> menyematkan kata sandi untuk melihat konten ini.
           </p>
         </div>
 
@@ -407,6 +439,27 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
     );
   }
 
+  // Resolve attachments (supporting both new multi-attachment array and legacy single image)
+  const resolvedAttachments: ClipboardAttachment[] =
+    item.attachments && item.attachments.length > 0
+      ? item.attachments
+      : item.imageUrl
+      ? [
+          {
+            id: 'legacy-img',
+            name: `gambar-${slug}.png`,
+            size: 0,
+            type: 'image',
+            mimeType: 'image/png',
+            path: item.imagePath || '',
+            url: item.imageUrl,
+          },
+        ]
+      : [];
+
+  const imageAttachments = resolvedAttachments.filter((att) => att.type === 'image' && att.url);
+  const documentAttachments = resolvedAttachments.filter((att) => att.type !== 'image');
+
   // 4. MAIN CONTENT VIEW STATE (AUTHENTICATED / UNLOCKED)
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8 sm:py-12 space-y-6">
@@ -415,7 +468,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-900/80">
-              Nextbyte Clipboard
+              Nextbyte Clip
             </span>
             {item.isBurned ? (
               <span className="text-xs text-orange-500 font-bold flex items-center gap-1">
@@ -446,13 +499,13 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
             <span>{copiedLink ? 'Tautan Disalin!' : 'Salin Tautan'}</span>
           </button>
 
-          {/* Show delete button if this browser created the clipboard (holds valid token) */}
+          {/* Delete button if creator holds management token */}
           {item.hasManagementToken && (
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 text-xs font-semibold transition-colors"
-              title="Hapus clipboard ini"
+              title="Hapus clip ini permanen"
             >
               <Trash2 className="w-4 h-4" />
               <span>Hapus</span>
@@ -464,12 +517,12 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
           >
             <Clipboard className="w-4 h-4" />
-            <span>Buat Baru</span>
+            <span>Buat Clip Baru</span>
           </Link>
         </div>
       </div>
 
-      {/* BURN AFTER READ NOTICE */}
+      {/* BURN AFTER READ NOTICE BANNER */}
       {item.isBurned && (
         <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-orange-500/15 via-red-500/15 to-amber-500/15 border-2 border-orange-500/30 text-slate-900 dark:text-white space-y-1.5 shadow-lg shadow-orange-500/5 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center gap-2 font-bold text-orange-600 dark:text-orange-400 text-sm">
@@ -477,14 +530,14 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
             <span>Clipboard Ini Telah Terhapus Otomatis (Burn After Read)</span>
           </div>
           <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            Karena tautan ini telah dibuka di perangkat Anda, data telah <strong>langsung dihapus secara permanen dari server</strong> untuk menjaga kerahasiaan. Pastikan Anda menyalin teks atau mengunduh gambar sekarang sebelum menutup halaman ini!
+            Karena tautan ini telah dibuka di perangkat Anda, data telah <strong>langsung dihapus secara permanen dari server</strong> untuk menjaga privasi. Pastikan Anda menyalin teks atau mengunduh lampiran berkas sekarang sebelum menutup halaman ini!
           </p>
         </div>
       )}
 
       {/* CONTENT AREA */}
       <div className="space-y-6">
-        {/* TEXT CONTENT CARD (Only shown if text exists) */}
+        {/* 1. TEXT CONTENT CARD (Only shown if text exists) */}
         {item.textContent && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -504,7 +557,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
             </div>
 
             <div className="relative">
-              <pre className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/80 text-xs sm:text-sm text-slate-800 dark:text-slate-200 font-mono whitespace-pre-wrap break-words leading-relaxed max-h-[600px] overflow-y-auto">
+              <pre className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/80 text-xs sm:text-sm text-slate-800 dark:text-slate-200 font-mono whitespace-pre-wrap break-words leading-relaxed max-h-[500px] overflow-y-auto">
                 {item.textContent}
               </pre>
             </div>
@@ -516,44 +569,123 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
           </div>
         )}
 
-        {/* IMAGE CONTENT CARD (Only shown if image exists) */}
-        {item.imageUrl && (
+        {/* 2. IMAGE ATTACHMENTS (Images rendered with preview & copy/download actions) */}
+        {imageAttachments.length > 0 && (
+          <div className="space-y-4">
+            {imageAttachments.map((imgAtt, idx) => (
+              <div
+                key={imgAtt.id || idx}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-4"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileImage className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                      {imgAtt.name || 'Gambar Terlampir'}
+                    </span>
+                    {imgAtt.size > 0 && (
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        ({formatBytes(imgAtt.size)})
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyImage(imgAtt.url!, imgAtt.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors"
+                    >
+                      {copiedImageId === imgAtt.id ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>{copiedImageId === imgAtt.id ? 'Tersalin!' : 'Copy Image'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadFile(imgAtt.url!, imgAtt.name || `gambar-${slug}.png`)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Unduh</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative rounded-2xl overflow-hidden bg-slate-900/5 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 p-2 sm:p-4 flex items-center justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imgAtt.url!}
+                    alt={imgAtt.name}
+                    className="max-h-[600px] w-auto object-contain rounded-xl shadow-sm"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 3. DOCUMENT ATTACHMENTS (Word, Excel, PowerPoint, PDF, etc.) */}
+        {documentAttachments.length > 0 && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                <ImageIcon className="w-4 h-4 text-emerald-500" />
-                <span>Gambar Terlampir</span>
-              </div>
-
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopyImage}
-                  disabled={isCopyingImage}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors"
-                >
-                  {copiedImage ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedImage ? 'Gambar Disalin!' : 'Copy Image'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDownloadImage}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download Image</span>
-                </button>
+                <Paperclip className="w-4 h-4 text-blue-500" />
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  Dokumen Terlampir ({documentAttachments.length} berkas)
+                </h3>
               </div>
+              <span className="text-[11px] text-slate-400">Siap diunduh</span>
             </div>
 
-            <div className="relative rounded-2xl overflow-hidden bg-slate-900/5 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 p-2 sm:p-4 flex items-center justify-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.imageUrl}
-                alt={`Gambar ${item.slug}`}
-                className="max-h-[650px] w-auto object-contain rounded-xl shadow-sm"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {documentAttachments.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center shrink-0 shadow-sm">
+                      {renderAttachmentIcon(doc.type)}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {doc.name}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span
+                          className={`text-[9px] uppercase font-bold px-1.5 py-0.2 rounded border ${getFormatBadge(
+                            doc.type
+                          )}`}
+                        >
+                          {doc.name.split('.').pop() || doc.type}
+                        </span>
+                        {doc.size > 0 && (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {formatBytes(doc.size)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {doc.url && (
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadFile(doc.url!, doc.name)}
+                      className="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shrink-0 shadow-sm flex items-center gap-1.5"
+                      title="Unduh Berkas"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Unduh</span>
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -572,7 +704,7 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
                 Hapus Clipboard Ini?
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Tindakan ini permanen. Seluruh konten teks dan gambar yang terhubung dengan tautan ini akan segera dihapus dari server.
+                Tindakan ini bersifat permanen. Seluruh isi teks dan lampiran yang terhubung dengan tautan ini akan segera dihapus permanen dari server.
               </p>
             </div>
 

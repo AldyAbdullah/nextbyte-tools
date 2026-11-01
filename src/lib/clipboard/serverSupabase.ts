@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { AttachmentType } from '@/types/clipboard';
 
 export const CLIPBOARD_BUCKET = 'clipboard-images';
 
@@ -56,11 +57,35 @@ export function getServerSupabase(): SupabaseClient | null {
 }
 
 /**
- * Uploads a validated image Buffer to the private 'clipboard-images' storage bucket.
+ * Detects the file category for icons and viewer handling
+ */
+export function detectAttachmentType(filename: string, mime: string): AttachmentType {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || mime.startsWith('image/')) {
+    return 'image';
+  }
+  if (ext === 'pdf' || mime === 'application/pdf') {
+    return 'pdf';
+  }
+  if (['doc', 'docx'].includes(ext) || mime.includes('word') || mime.includes('msword')) {
+    return 'word';
+  }
+  if (['xls', 'xlsx'].includes(ext) || mime.includes('excel') || mime.includes('spreadsheet')) {
+    return 'excel';
+  }
+  if (['ppt', 'pptx'].includes(ext) || mime.includes('powerpoint') || mime.includes('presentation')) {
+    return 'powerpoint';
+  }
+  return 'file';
+}
+
+/**
+ * Uploads a validated file Buffer (image or document) to the private storage bucket.
  * Uses a cryptographically random UUID filename to prevent collisions and information disclosure.
  */
-export async function uploadClipboardImage(
+export async function uploadClipboardFile(
   buffer: Buffer,
+  filename: string,
   mimeType: string,
   ext: string
 ): Promise<{ path: string } | { error: string }> {
@@ -70,39 +95,50 @@ export async function uploadClipboardImage(
   }
 
   const randomName = `${crypto.randomUUID()}.${ext}`;
-  const filePath = `images/${randomName}`;
+  const filePath = `files/${randomName}`;
 
   try {
     const { error: uploadError } = await supabase.storage
       .from(CLIPBOARD_BUCKET)
       .upload(filePath, buffer, {
-        contentType: mimeType,
+        contentType: mimeType || 'application/octet-stream',
         cacheControl: '3600',
         upsert: false,
       });
 
     if (uploadError) {
       console.error('Supabase Storage upload error:', uploadError);
-      return { error: `Gagal mengunggah gambar ke Storage: ${uploadError.message}` };
+      return { error: `Gagal mengunggah berkas (${filename}): ${uploadError.message}` };
     }
 
     return { path: filePath };
   } catch (err) {
     console.error('Unexpected error during storage upload:', err);
-    return { error: 'Terjadi kendala saat mengunggah berkas gambar.' };
+    return { error: `Terjadi kendala saat mengunggah berkas ${filename}.` };
   }
 }
 
 /**
- * Generates a temporary signed URL for viewing an image from the private bucket.
+ * Uploads a validated image Buffer (legacy compatibility alias)
+ */
+export async function uploadClipboardImage(
+  buffer: Buffer,
+  mimeType: string,
+  ext: string
+): Promise<{ path: string } | { error: string }> {
+  return uploadClipboardFile(buffer, `image.${ext}`, mimeType, ext);
+}
+
+/**
+ * Generates a temporary signed URL for viewing/downloading a file from the private bucket.
  * Expire time matches the clipboard's remaining lifetime (max 1 hour per token).
  */
 export async function getSignedImageUrl(
-  imagePath: string,
+  filePath: string,
   expiresAt: Date
 ): Promise<string | null> {
   const supabase = getServerSupabase();
-  if (!supabase || !imagePath) return null;
+  if (!supabase || !filePath) return null;
 
   try {
     const remainingSeconds = Math.max(60, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
@@ -111,36 +147,43 @@ export async function getSignedImageUrl(
 
     const { data, error } = await supabase.storage
       .from(CLIPBOARD_BUCKET)
-      .createSignedUrl(imagePath, validSeconds);
+      .createSignedUrl(filePath, validSeconds);
 
     if (error || !data?.signedUrl) {
-      console.warn('Failed to generate signed image URL:', error?.message);
+      console.warn('Failed to generate signed file URL:', error?.message);
       return null;
     }
 
     return data.signedUrl;
   } catch (err) {
-    console.warn('Error creating signed image URL:', err);
+    console.warn('Error creating signed file URL:', err);
     return null;
   }
 }
 
 /**
- * Deletes an image file from the private storage bucket.
+ * Deletes an array of files from the private storage bucket.
  */
-export async function deleteClipboardImage(imagePath: string): Promise<boolean> {
+export async function deleteClipboardFiles(filePaths: string[]): Promise<boolean> {
   const supabase = getServerSupabase();
-  if (!supabase || !imagePath) return false;
+  if (!supabase || filePaths.length === 0) return false;
 
   try {
-    const { error } = await supabase.storage.from(CLIPBOARD_BUCKET).remove([imagePath]);
+    const { error } = await supabase.storage.from(CLIPBOARD_BUCKET).remove(filePaths);
     if (error) {
-      console.warn('Failed to delete image from storage:', error.message);
+      console.warn('Failed to delete files from storage:', error.message);
       return false;
     }
     return true;
   } catch (err) {
-    console.warn('Error deleting image from storage:', err);
+    console.warn('Error deleting files from storage:', err);
     return false;
   }
+}
+
+/**
+ * Deletes an image file from the private storage bucket (legacy compatibility alias)
+ */
+export async function deleteClipboardImage(imagePath: string): Promise<boolean> {
+  return deleteClipboardFiles([imagePath]);
 }

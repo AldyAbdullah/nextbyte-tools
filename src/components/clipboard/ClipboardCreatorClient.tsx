@@ -21,24 +21,63 @@ import {
   ShieldCheck,
   Code2,
   Flame,
+  FileText,
+  FileSpreadsheet,
+  Presentation,
+  FileImage,
+  File,
+  Trash2,
+  Paperclip,
+  Settings2,
+  ExternalLink,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import { validateSlug, sanitizeSlug, generateRandomSlug } from '@/lib/clipboard/slug';
-import type { ClipboardExpiry } from '@/types/clipboard';
+import type { ClipboardExpiry, AttachmentType } from '@/types/clipboard';
 import confetti from 'canvas-confetti';
 
 const EXPIRY_OPTIONS: Array<{ value: ClipboardExpiry; label: string; desc: string }> = [
   { value: '10m', label: '10 Menit', desc: 'Transfer cepat sekali pakai' },
   { value: '1h', label: '1 Jam', desc: 'Sangat privat, cepat hilang' },
   { value: '6h', label: '6 Jam', desc: 'Cocok untuk rapat / tugas' },
-  { value: '12h', label: '12 Jam', desc: 'Maksimal batas simpan (Default)' },
+  { value: '12h', label: '12 Jam', desc: 'Batas simpan maksimal' },
 ];
+
+const MAX_FILES = 5;
+const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_TOTAL_FILES_BYTES = 25 * 1024 * 1024; // 25 MB
+const MAX_TEXT_BYTES = 100 * 1024; // 100 KB
+
+interface LocalFileAttachment {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  type: AttachmentType;
+  previewUrl?: string;
+}
+
+function detectFileType(fileName: string, mime: string): AttachmentType {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (['jpg', 'jpeg', 'png', 'webp'].includes(ext) || mime.startsWith('image/')) return 'image';
+  if (ext === 'pdf' || mime === 'application/pdf') return 'pdf';
+  if (['doc', 'docx'].includes(ext) || mime.includes('word')) return 'word';
+  if (['xls', 'xlsx'].includes(ext) || mime.includes('sheet') || mime.includes('excel')) return 'excel';
+  if (['ppt', 'pptx'].includes(ext) || mime.includes('presentation') || mime.includes('powerpoint')) return 'powerpoint';
+  return 'document';
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function ClipboardCreatorClient() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  // Quick Open state for opening on another device
+  // Quick Open Bar state
   const [quickOpenSlug, setQuickOpenSlug] = useState<string>('');
 
   // Form states
@@ -46,15 +85,16 @@ export function ClipboardCreatorClient() {
   const [slugTouched, setSlugTouched] = useState<boolean>(false);
   const [textContent, setTextContent] = useState<string>('');
   const [isMonospace, setIsMonospace] = useState<boolean>(false);
+
+  // Settings states
   const [expiry, setExpiry] = useState<ClipboardExpiry>('12h');
-  const [burnAfterRead, setBurnAfterRead] = useState<boolean>(true); // Default: TRUE (Hapus otomatis setelah dibuka di perangkat lain)
+  const [burnAfterRead, setBurnAfterRead] = useState<boolean>(true); // Default: TRUE
+  const [passwordProtection, setPasswordProtection] = useState<boolean>(false);
   const [password, setPassword] = useState<string>('');
-  const [showPasswordInput, setShowPasswordInput] = useState<boolean>(false);
   const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
 
-  // Image upload states
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  // Multi-attachment states
+  const [attachments, setAttachments] = useState<LocalFileAttachment[]>([]);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,72 +110,93 @@ export function ClipboardCreatorClient() {
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const qrContainerRef = useRef<HTMLDivElement>(null);
 
-  // Validate slug on the fly
+  // Slug validation
   const slugValidation = validateSlug(slug);
   const isSlugValid = slugValidation.valid;
 
-  // Real-time byte count of text (max 100 KB = 102400 bytes)
+  // Real-time byte calculation of text
   const textBytes = typeof window !== 'undefined' ? new Blob([textContent]).size : textContent.length;
-  const isTextTooLarge = textBytes > 102400;
+  const isTextTooLarge = textBytes > MAX_TEXT_BYTES;
 
-  // Cleanup object URL preview on unmount
+  // Total attachments size
+  const totalAttachmentsSize = attachments.reduce((sum, item) => sum + item.size, 0);
+
+  // Cleanup object URLs on unmount or when removed
   useEffect(() => {
     return () => {
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl);
-      }
+      attachments.forEach((att) => {
+        if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+      });
     };
-  }, [imagePreviewUrl]);
+  }, [attachments]);
 
-  // Handle Image Selection
-  const handleSelectImage = useCallback((file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('Ukuran gambar melebihi batas maksimal 5 MB.', 'error');
-      return;
-    }
+  // Handle adding files
+  const handleAddFiles = useCallback((files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (!fileArray.length) return;
 
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!validTypes.includes(file.type.toLowerCase())) {
-      showToast('Hanya format JPG, JPEG, PNG, dan WebP yang diizinkan.', 'error');
-      return;
-    }
+    setAttachments((prev) => {
+      if (prev.length + fileArray.length > MAX_FILES) {
+        showToast(`Maksimal ${MAX_FILES} lampiran berkas diperbolehkan.`, 'error');
+        return prev;
+      }
 
-    if (imagePreviewUrl) {
-      URL.revokeObjectURL(imagePreviewUrl);
-    }
+      const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+      const newItems: LocalFileAttachment[] = [];
 
-    const preview = URL.createObjectURL(file);
-    setImageFile(file);
-    setImagePreviewUrl(preview);
-    showToast('Gambar berhasil dipilih!', 'success');
-  }, [imagePreviewUrl, showToast]);
+      let currentTotalSize = prev.reduce((sum, item) => sum + item.size, 0);
 
-  // Handle Clipboard Paste (Paste image directly from OS clipboard)
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      // Don't intercept if user is typing text into textarea or input
-      const target = e.target as HTMLElement;
-      if (target && target.tagName === 'INPUT') return;
-
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile();
-          if (blob) {
-            handleSelectImage(blob);
-            break;
-          }
+      for (const file of fileArray) {
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        if (!allowedExts.includes(ext)) {
+          showToast(`Format "${file.name}" tidak didukung. Didukung: Gambar (JPG, PNG, WebP) & Dokumen (PDF, Word, Excel, PPT).`, 'error');
+          continue;
         }
+
+        if (file.size > MAX_SINGLE_FILE_BYTES) {
+          showToast(`Berkas "${file.name}" melebihi batas 10 MB.`, 'error');
+          continue;
+        }
+
+        if (currentTotalSize + file.size > MAX_TOTAL_FILES_BYTES) {
+          showToast('Total ukuran berkas melebihi batas maksimal 25 MB.', 'error');
+          break;
+        }
+
+        currentTotalSize += file.size;
+        const fileType = detectFileType(file.name, file.type);
+        const previewUrl = fileType === 'image' ? URL.createObjectURL(file) : undefined;
+
+        newItems.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          file,
+          name: file.name,
+          size: file.size,
+          type: fileType,
+          previewUrl,
+        });
       }
-    };
 
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [handleSelectImage]);
+      if (newItems.length > 0) {
+        showToast(`${newItems.length} berkas berhasil ditambahkan.`, 'success');
+      }
 
-  // Drag and Drop handlers
+      return [...prev, ...newItems];
+    });
+  }, [showToast]);
+
+  // Handle remove individual attachment
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
+  // Handle Drag & Drop
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -149,31 +210,48 @@ export function ClipboardCreatorClient() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      handleSelectImage(files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleAddFiles(e.dataTransfer.files);
     }
   };
 
-  const handleRemoveImage = () => {
-    if (imagePreviewUrl) {
-      URL.revokeObjectURL(imagePreviewUrl);
-    }
-    setImageFile(null);
-    setImagePreviewUrl(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+  // Handle OS clipboard paste (Ctrl+V) for images/files
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      // If user is typing in input, don't hijack
+      if (target && target.tagName === 'INPUT') return;
 
-  // Auto-generate random slug
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const pastedFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          const file = items[i].getAsFile();
+          if (file) {
+            pastedFiles.push(file);
+          }
+        }
+      }
+
+      if (pastedFiles.length > 0) {
+        handleAddFiles(pastedFiles);
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [handleAddFiles]);
+
+  // Randomize Slug
   const handleRandomizeSlug = () => {
     const generated = generateRandomSlug();
     setSlug(generated);
     setSlugTouched(true);
   };
 
-  // Quick Open on another computer
+  // Quick Open on another device
   const handleQuickOpen = (e: React.FormEvent) => {
     e.preventDefault();
     const clean = sanitizeSlug(quickOpenSlug.trim().toLowerCase());
@@ -188,22 +266,28 @@ export function ClipboardCreatorClient() {
     setErrorMessage('');
 
     if (!isSlugValid) {
-      showToast(slugValidation.error || 'Harap periksa format custom URL Anda.', 'error');
+      showToast(slugValidation.error || 'Harap periksa format Custom URL Anda.', 'error');
       return;
     }
 
     const hasText = Boolean(textContent && textContent.trim().length > 0);
-    const hasImage = Boolean(imageFile);
+    const hasFiles = attachments.length > 0;
 
-    if (!hasText && !hasImage) {
-      setErrorMessage('Harap masukkan teks atau unggah gambar untuk membuat clipboard.');
-      showToast('Harap masukkan teks atau unggah gambar.', 'error');
+    if (!hasText && !hasFiles) {
+      setErrorMessage('Harap masukkan teks atau tambahkan lampiran untuk membuat clipboard.');
+      showToast('Harap masukkan teks atau tambahkan lampiran berkas.', 'error');
       return;
     }
 
     if (isTextTooLarge) {
       setErrorMessage('Ukuran teks melebihi batas maksimal 100 KB.');
-      showToast('Ukuran teks melebihi 100 KB.', 'error');
+      showToast('Ukuran teks melebihi batas 100 KB.', 'error');
+      return;
+    }
+
+    if (passwordProtection && !password.trim()) {
+      setErrorMessage('Harap masukkan kata sandi perlindungan atau nonaktifkan Kunci Sandi.');
+      showToast('Kata sandi perlindungan belum diisi.', 'error');
       return;
     }
 
@@ -213,10 +297,17 @@ export function ClipboardCreatorClient() {
       const formData = new FormData();
       formData.append('slug', slug.trim().toLowerCase());
       if (hasText) formData.append('textContent', textContent);
-      if (hasImage && imageFile) formData.append('image', imageFile);
+
+      // Append multi-attachments
+      attachments.forEach((att) => {
+        formData.append('files', att.file);
+      });
+
       formData.append('expiry', expiry);
       formData.append('burnAfterRead', burnAfterRead ? 'true' : 'false');
-      if (password.trim()) formData.append('password', password.trim());
+      if (passwordProtection && password.trim()) {
+        formData.append('password', password.trim());
+      }
 
       const res = await fetch('/api/clipboard/create', {
         method: 'POST',
@@ -229,7 +320,7 @@ export function ClipboardCreatorClient() {
         throw new Error(data.error || 'Gagal membuat clipboard.');
       }
 
-      // Store management token in localStorage so user can delete from this browser
+      // Save management token locally so user can delete their clip from this browser
       try {
         if (typeof window !== 'undefined' && data.slug && data.managementToken) {
           localStorage.setItem(`nb_mgmt_${data.slug}`, data.managementToken);
@@ -246,7 +337,7 @@ export function ClipboardCreatorClient() {
       });
 
       try {
-        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+        confetti({ particleCount: 65, spread: 70, origin: { y: 0.6 } });
       } catch {}
 
       showToast('Clipboard berhasil dibuat!', 'success');
@@ -272,8 +363,8 @@ export function ClipboardCreatorClient() {
         qrContainerRef.current.innerHTML = '';
 
         const qr = new QRCodeStyling({
-          width: 180,
-          height: 180,
+          width: 170,
+          height: 170,
           data: targetUrl,
           dotsOptions: {
             color: '#2563eb',
@@ -309,27 +400,65 @@ export function ClipboardCreatorClient() {
     }
   };
 
+  // Helper to render attachment icon badge
+  const renderAttachmentIcon = (type: AttachmentType) => {
+    switch (type) {
+      case 'image':
+        return <FileImage className="w-5 h-5 text-emerald-500 shrink-0" />;
+      case 'pdf':
+        return <FileText className="w-5 h-5 text-red-500 shrink-0" />;
+      case 'word':
+        return <FileText className="w-5 h-5 text-blue-500 shrink-0" />;
+      case 'excel':
+        return <FileSpreadsheet className="w-5 h-5 text-emerald-600 shrink-0" />;
+      case 'powerpoint':
+        return <Presentation className="w-5 h-5 text-amber-500 shrink-0" />;
+      default:
+        return <File className="w-5 h-5 text-slate-500 shrink-0" />;
+    }
+  };
+
+  const getFormatBadge = (type: AttachmentType) => {
+    switch (type) {
+      case 'image':
+        return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+      case 'pdf':
+        return 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border-red-200 dark:border-red-800';
+      case 'word':
+        return 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+      case 'excel':
+        return 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800';
+      case 'powerpoint':
+        return 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+      default:
+        return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+    }
+  };
+
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-8 sm:py-12 space-y-10">
-      {/* 1. HERO SECTION */}
-      <div className="text-center space-y-3.5 max-w-2xl mx-auto animate-in fade-in duration-300">
+    <div className="w-full max-w-6xl mx-auto px-4 py-6 sm:py-10 space-y-8">
+      {/* 1. HERO SECTION & QUICK OPEN BAR */}
+      <div className="text-center space-y-3 max-w-2xl mx-auto animate-in fade-in duration-300">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-900/80 text-blue-700 dark:text-blue-400 text-xs font-semibold">
           <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-          <span>Nextbyte Clipboard • Berbagi Instan Lintas Perangkat</span>
+          <span>Nextbyte Clip • Berbagi Instan Lintas Perangkat</span>
         </div>
 
         <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
           Share anything, <span className="text-blue-600 dark:text-blue-400">instantly.</span>
         </h1>
 
-        <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
-          A simple way to share text and images between your devices. Bagikan catatan, cuplikan kode, atau gambar via URL khusus tanpa login.
+        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-xl mx-auto">
+          Bagikan teks, catatan, kode, dokumen, atau gambar antarperangkat via custom URL tanpa login. Aman, praktis, dan otomatis terhapus.
         </p>
 
-        {/* QUICK OPEN BAR (Mudah dibuka di komputer/laptop lain tanpa ketik panjang) */}
-        <div className="pt-2 max-w-lg mx-auto">
-          <div className="bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 shadow-sm flex items-center justify-between gap-2">
-            <div className="relative flex-1">
+        {/* QUICK OPEN BAR (Akses cepat clip di perangkat lain) */}
+        <div className="pt-2 max-w-md mx-auto">
+          <form
+            onSubmit={handleQuickOpen}
+            className="bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-sm flex items-center justify-between gap-1.5"
+          >
+            <div className="relative flex-1 min-w-0">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400">
                 /clip/
               </span>
@@ -337,370 +466,450 @@ export function ClipboardCreatorClient() {
                 type="text"
                 value={quickOpenSlug}
                 onChange={(e) => setQuickOpenSlug(sanitizeSlug(e.target.value))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleQuickOpen(e);
-                  }
-                }}
-                placeholder="nama-clip-kamu"
-                className="w-full pl-12 pr-3 py-2 rounded-xl text-xs sm:text-sm font-mono font-bold bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                placeholder="nama-clip"
+                className="w-full pl-12 pr-2 py-2 rounded-xl text-xs sm:text-sm font-mono font-bold bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
               />
             </div>
             <button
-              type="button"
-              onClick={handleQuickOpen}
+              type="submit"
               disabled={!quickOpenSlug.trim()}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs transition-colors shrink-0 shadow-sm"
+              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs transition-colors shrink-0 shadow-sm flex items-center gap-1"
             >
-              Buka Clip
+              <span>Buka</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
-          </div>
+          </form>
         </div>
       </div>
 
-      {/* 2. FORM CONTAINER */}
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Error Alert Box */}
-        {errorMessage && (
-          <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs sm:text-sm flex items-start gap-3 animate-in fade-in">
-            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-            <div className="flex-1">{errorMessage}</div>
-            <button type="button" onClick={() => setErrorMessage('')} className="p-1 hover:text-rose-900">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+      {/* ERROR ALERT BOX */}
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs sm:text-sm flex items-start gap-3 animate-in fade-in">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div className="flex-1 font-medium">{errorMessage}</div>
+          <button
+            type="button"
+            onClick={() => setErrorMessage('')}
+            className="p-1 hover:text-rose-900 dark:hover:text-rose-100 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
-        {/* STEP 1: CUSTOM URL INPUT */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] flex items-center justify-center font-mono">1</span>
-              <span>Tentukan Custom URL</span>
-            </label>
+      {/* 2. TWO-COLUMN LAYOUT: MAIN CLIPBOARD (LEFT ~70%) vs SETTINGS SIDEBAR (RIGHT ~30%) */}
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* ========================================================================= */}
+          {/* KOLOM KIRI: MAIN CLIPBOARD (AREA UTAMA ~70-75%) */}
+          {/* ========================================================================= */}
+          <div className="lg:col-span-8 space-y-6">
+            {/* TEXT EDITOR CARD (DOMINANT COMPONENT) */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <Clipboard className="w-3.5 h-3.5" />
+                  </div>
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                    Main Clipboard (Teks &amp; Catatan)
+                  </h2>
+                </div>
 
-            <button
-              type="button"
-              onClick={handleRandomizeSlug}
-              className="inline-flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Acak URL</span>
-            </button>
-          </div>
+                <div className="flex items-center gap-1.5">
+                  {textContent && (
+                    <button
+                      type="button"
+                      onClick={() => setTextContent('')}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors"
+                    >
+                      Hapus Teks
+                    </button>
+                  )}
 
-          <div className="space-y-2">
-            <div className="flex items-center rounded-2xl border bg-slate-50/70 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 overflow-hidden transition-all">
-              <span className="pl-4 pr-1 text-xs sm:text-sm text-slate-400 font-mono select-none truncate">
-                nextbyte.biz.id/clip/
-              </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsMonospace(!isMonospace)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      isMonospace
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>{isMonospace ? 'Mode Kode Aktif' : 'Monospace'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Textarea Area */}
+              <div className="space-y-2">
+                <textarea
+                  value={textContent}
+                  onChange={(e) => setTextContent(e.target.value)}
+                  placeholder="Ketik catatan, pesan, tautan, atau tempelkan cuplikan kode di sini... Anda juga bisa langsung menempelkan gambar atau file (Ctrl+V) ke clipboard."
+                  rows={11}
+                  className={`w-full p-4 rounded-2xl border bg-slate-50/70 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all resize-y min-h-[220px] ${
+                    isMonospace ? 'font-mono' : 'font-sans'
+                  }`}
+                />
+
+                <div className="flex items-center justify-between text-xs text-slate-400 px-1 pt-1">
+                  <span>Mendukung teks multibaris &amp; baris kosong</span>
+                  <span className={`font-mono ${isTextTooLarge ? 'text-rose-500 font-bold' : ''}`}>
+                    {(textBytes / 1024).toFixed(1)} KB / 100 KB
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ATTACHMENT CARD (EXPANDED FOR IMAGES & DOCUMENTS) */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-5">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <Paperclip className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                      Lampiran Berkas (Gambar &amp; Dokumen)
+                    </h2>
+                    <p className="text-[11px] text-slate-400">
+                      Lampiran dapat diunduh oleh penerima tautan
+                    </p>
+                  </div>
+                </div>
+
+                <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                  {attachments.length}/{MAX_FILES} berkas
+                </span>
+              </div>
+
+              {/* Hidden File Input */}
               <input
-                type="text"
-                value={slug}
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 onChange={(e) => {
-                  setSlug(sanitizeSlug(e.target.value));
-                  setSlugTouched(true);
+                  if (e.target.files) handleAddFiles(e.target.files);
+                  e.target.value = '';
                 }}
-                onBlur={() => setSlugTouched(true)}
-                placeholder="nama-url-kamu"
-                maxLength={30}
-                required
-                className="w-full py-3.5 pr-4 text-xs sm:text-sm font-mono font-bold text-slate-900 dark:text-white bg-transparent focus:outline-none"
+                className="hidden"
+                id="clipboard-multi-file-input"
               />
-            </div>
 
-            {/* Validation Feedback */}
-            {slugTouched && slug.length > 0 && (
-              <div className="flex items-center justify-between text-xs px-1">
-                {isSlugValid ? (
-                  <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Format URL valid dan siap digunakan.</span>
-                  </span>
-                ) : (
-                  <span className="text-rose-500 font-medium flex items-center gap-1">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{slugValidation.error}</span>
-                  </span>
-                )}
-                <span className="text-slate-400 font-mono">{slug.length}/30</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* STEP 2: TEXT EDITOR */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <label className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] flex items-center justify-center font-mono">2</span>
-              <span>Tulis atau Tempel Teks (Opsional)</span>
-            </label>
-
-            <button
-              type="button"
-              onClick={() => setIsMonospace(!isMonospace)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                isMonospace
-                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-              }`}
-            >
-              <Code2 className="w-3.5 h-3.5" />
-              <span>Mode Kode / Monospace</span>
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            <textarea
-              value={textContent}
-              onChange={(e) => setTextContent(e.target.value)}
-              placeholder="Ketik catatan, pesan, tautan, atau tempelkan cuplikan kode di sini..."
-              rows={7}
-              className={`w-full p-4 rounded-2xl border bg-slate-50/70 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all ${
-                isMonospace ? 'font-mono' : 'font-sans'
-              }`}
-            />
-
-            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-              <span>Mendukung teks multibaris & baris kosong</span>
-              <span className={`font-mono ${isTextTooLarge ? 'text-rose-500 font-bold' : ''}`}>
-                {(textBytes / 1024).toFixed(1)} KB / 100 KB
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* STEP 3: IMAGE UPLOADER */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <label className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] flex items-center justify-center font-mono">3</span>
-              <span>Unggah Gambar (Opsional)</span>
-            </label>
-            <span className="text-[11px] text-slate-400">Maks. 1 gambar (5 MB)</span>
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/jpg,image/png,image/webp"
-            onChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                handleSelectImage(e.target.files[0]);
-              }
-            }}
-            className="hidden"
-            id="clipboard-image-input"
-          />
-
-          {!imageFile ? (
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`p-6 sm:p-8 rounded-2xl border-2 border-dashed cursor-pointer text-center space-y-3 transition-all ${
-                isDragging
-                  ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 bg-slate-50/50 dark:bg-slate-950/30'
-              }`}
-            >
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
-                <UploadCloud className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                  Klik untuk memilih gambar atau seret berkas ke sini
-                </p>
-                <p className="text-xs text-slate-400">
-                  Mendukung JPG, PNG, WebP • Bisa juga langsung tekan <kbd className="font-mono bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">Ctrl+V</kbd> untuk tempel gambar
-                </p>
-              </div>
-            </div>
-          ) : (
-            /* Image Preview Card */
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="relative rounded-xl overflow-hidden max-h-72 flex items-center justify-center bg-slate-900/10 dark:bg-slate-900/60">
-                {imagePreviewUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={imagePreviewUrl}
-                    alt="Preview"
-                    className="max-h-72 w-auto object-contain rounded-lg"
-                  />
-                )}
-              </div>
-
-              <div className="flex items-center justify-between text-xs">
-                <div className="min-w-0 pr-2">
-                  <p className="font-bold text-slate-900 dark:text-white truncate">{imageFile.name}</p>
-                  <p className="text-slate-400 font-mono mt-0.5">{(imageFile.size / 1024).toFixed(1)} KB</p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all"
-                  >
-                    Ganti
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRemoveImage}
-                    className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/50 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 text-xs font-semibold transition-all"
-                  >
-                    Hapus
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* STEP 4: BURN AFTER READ SETTING (Default: Aktif) */}
-        <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-red-500/10 border border-orange-200/80 dark:border-orange-900/50 rounded-3xl p-5 sm:p-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Flame className="w-5 h-5 text-orange-500 shrink-0" />
-                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                  Hapus Otomatis Saat Dibuka di Perangkat Lain (Burn After Read)
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
-                  Default Aktif
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Saat tautan dibuka pertama kali oleh penerima di perangkat lain, konten langsung ditampilkan dan otomatis terhapus permanen dari server. Jika dinonaktifkan, clipboard akan tetap tersimpan hingga batas masa berlaku (maksimal 12 jam).
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setBurnAfterRead(!burnAfterRead)}
-              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                burnAfterRead ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'
-              }`}
-              aria-label="Toggle Burn After Read"
-            >
-              <span
-                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                  burnAfterRead ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* STEP 5: EXPIRY SETTINGS & PASSWORD */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Expiry Selector */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3.5">
-            <label className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-500" />
-              <span>Masa Berlaku Clipboard</span>
-            </label>
-
-            <div className="grid grid-cols-2 gap-2">
-              {EXPIRY_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setExpiry(opt.value)}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
-                    expiry === opt.value
-                      ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 shadow-sm'
-                      : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300'
+              {/* Dropzone Area */}
+              {attachments.length < MAX_FILES && (
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-6 sm:p-7 rounded-2xl border-2 border-dashed cursor-pointer text-center space-y-2.5 transition-all ${
+                    isDragging
+                      ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/30 ring-2 ring-blue-500/20'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 bg-slate-50/50 dark:bg-slate-950/30'
                   }`}
                 >
-                  <div className="text-xs font-bold">{opt.label}</div>
-                  <div className="text-[10px] text-slate-400 truncate mt-0.5">{opt.desc}</div>
-                </button>
-              ))}
+                  <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-inner">
+                    <UploadCloud className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                      Klik untuk memilih berkas atau seret berkas ke sini
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Mendukung <strong>Gambar</strong> (JPG, PNG, WebP) &amp; <strong>Dokumen</strong> (PDF, Word, Excel, PPT)
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Maks. 10 MB per berkas • Total maks. 25 MB • Bisa juga tekan <kbd className="font-mono bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[10px]">Ctrl+V</kbd>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Attachments List */}
+              {attachments.length > 0 && (
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                    <span>Daftar lampiran ({attachments.length} berkas):</span>
+                    <span className="font-mono">{formatBytes(totalAttachmentsSize)} / 25 MB</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {attachments.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                      >
+                        {/* File Thumbnail or Colored Icon */}
+                        <div className="flex items-center gap-3 min-w-0">
+                          {item.type === 'image' && item.previewUrl ? (
+                            <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={item.previewUrl}
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center shrink-0 shadow-sm">
+                              {renderAttachmentIcon(item.type)}
+                            </div>
+                          )}
+
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              {item.name}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span
+                                className={`text-[9px] uppercase font-bold px-1.5 py-0.2 rounded border ${getFormatBadge(
+                                  item.type
+                                )}`}
+                              >
+                                {item.name.split('.').pop() || item.type}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {formatBytes(item.size)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Remove Attachment Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(item.id)}
+                          className="p-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/50 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors shrink-0"
+                          title="Hapus lampiran"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Optional Password Protection */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-3.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Lock className="w-4 h-4 text-amber-500" />
-                <span>Kunci Sandi (Opsional)</span>
-              </label>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPasswordInput(!showPasswordInput);
-                  if (showPasswordInput) setPassword('');
-                }}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold"
-              >
-                {showPasswordInput ? 'Nonaktifkan' : '+ Tambah Sandi'}
-              </button>
-            </div>
-
-            {showPasswordInput ? (
-              <div className="relative">
-                <input
-                  type={showPasswordText ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Masukkan kata sandi perlindungan..."
-                  className="w-full py-2.5 pl-3.5 pr-10 text-xs sm:text-sm rounded-xl border bg-slate-50/70 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordText(!showPasswordText)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
-                >
-                  {showPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+          {/* ========================================================================= */}
+          {/* KOLOM KANAN: CLIPBOARD SETTINGS (SIDEBAR KECIL ~25-30%) */}
+          {/* ========================================================================= */}
+          <div className="lg:col-span-4 lg:sticky lg:top-24 space-y-5">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">
+              {/* Header Sidebar */}
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <Settings2 className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Pengaturan Clip
+                  </h3>
+                </div>
+                <span className="text-[11px] text-slate-400 font-semibold">Sidebar</span>
               </div>
-            ) : (
-              <p className="text-xs text-slate-400 leading-relaxed pt-1">
-                Clipboard dapat dibuka langsung oleh siapa saja yang memiliki tautan tanpa perlu memasukkan kata sandi.
-              </p>
-            )}
+
+              {/* 1. CUSTOM URL SETTING */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Custom URL
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRandomizeSlug}
+                    className="inline-flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Acak</span>
+                  </button>
+                </div>
+
+                {/* Input with Fixed Prefix */}
+                <div className="rounded-2xl border bg-slate-50/70 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 overflow-hidden transition-all flex items-center">
+                  <span className="pl-3 pr-0.5 text-xs text-slate-400 font-mono select-none truncate">
+                    nextbyte.biz.id/clip/
+                  </span>
+                  <input
+                    type="text"
+                    value={slug}
+                    onChange={(e) => {
+                      setSlug(sanitizeSlug(e.target.value));
+                      setSlugTouched(true);
+                    }}
+                    onBlur={() => setSlugTouched(true)}
+                    placeholder="nama-kamu"
+                    maxLength={30}
+                    required
+                    className="w-full py-2.5 pr-3 text-xs font-mono font-bold text-slate-900 dark:text-white bg-transparent focus:outline-none"
+                  />
+                </div>
+
+                {/* Slug Validation Feedback */}
+                {slugTouched && slug.length > 0 && (
+                  <div className="text-[11px] px-1">
+                    {isSlugValid ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>URL valid ({slug.length}/30)</span>
+                      </span>
+                    ) : (
+                      <span className="text-rose-500 font-medium flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        <span>{slugValidation.error}</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. EXPIRY TIME SETTING */}
+              <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 pt-2">
+                  <Clock className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Masa Berlaku</span>
+                </label>
+
+                {/* Compact 4-option Grid */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {EXPIRY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setExpiry(opt.value)}
+                      className={`p-2 rounded-xl border text-left transition-all ${
+                        expiry === opt.value
+                          ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold shadow-sm'
+                          : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <div className="text-xs">{opt.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. BURN AFTER READ TOGGLE */}
+              <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-2 pt-2">
+                  <div className="flex items-center gap-1.5">
+                    <Flame className="w-3.5 h-3.5 text-orange-500" />
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Burn After Read
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setBurnAfterRead(!burnAfterRead)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      burnAfterRead ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'
+                    }`}
+                    aria-label="Toggle Burn After Read"
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        burnAfterRead ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                  Dihapus permanen dari server setelah pertama kali dibuka oleh penerima.
+                </p>
+              </div>
+
+              {/* 4. PASSWORD PROTECTION TOGGLE */}
+              <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-2 pt-2">
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Kunci Sandi
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !passwordProtection;
+                      setPasswordProtection(next);
+                      if (!next) setPassword('');
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      passwordProtection ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                    }`}
+                    aria-label="Toggle Password Protection"
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        passwordProtection ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {passwordProtection && (
+                  <div className="relative pt-1 animate-in fade-in duration-200">
+                    <input
+                      type={showPasswordText ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Masukkan kata sandi..."
+                      className="w-full py-2 pl-3 pr-9 text-xs rounded-xl border bg-slate-50/70 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordText(!showPasswordText)}
+                      className="absolute right-2.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                    >
+                      {showPasswordText ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 5. PRIMARY ACTION BUTTON */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+                <button
+                  type="submit"
+                  disabled={isLoading || !isSlugValid || (!textContent.trim() && attachments.length === 0)}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/25 transition-all flex items-center justify-center gap-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Menyimpan Clipboard...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clipboard className="w-4 h-4" />
+                      <span>Buat Clipboard Baru</span>
+                    </>
+                  )}
+                </button>
+
+                <p className="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                  <span>Koneksi HTTPS aman &amp; kedaluwarsa otomatis</span>
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
-
-        {/* SUBMIT BUTTON */}
-        <div className="space-y-3 pt-2">
-          <button
-            type="submit"
-            disabled={isLoading || !isSlugValid || (!textContent.trim() && !imageFile)}
-            className="w-full py-4 px-6 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm sm:text-base shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2"
-          >
-            {isLoading ? (
-              <>
-                <RefreshCw className="w-5 h-5 animate-spin" />
-                <span>Menyimpan Clipboard...</span>
-              </>
-            ) : (
-              <>
-                <Clipboard className="w-5 h-5" />
-                <span>Buat Clipboard Baru (Create Clipboard)</span>
-              </>
-            )}
-          </button>
-
-          <p className="text-[11px] text-center text-slate-400 flex items-center justify-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Koneksi HTTPS terenkripsi. Clipboard bersifat pribadi dan kedaluwarsa otomatis.</span>
-          </p>
         </div>
       </form>
 
-      {/* SUCCESS MODAL POPUP */}
+      {/* 3. SUCCESS MODAL POPUP */}
       {createdData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center space-y-6 animate-in zoom-in-95">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-900/60 shadow-inner">
-              <CheckCircle2 className="w-8 h-8" />
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-900/60 shadow-inner">
+              <CheckCircle2 className="w-7 h-7" />
             </div>
 
             <div className="space-y-1">
@@ -708,12 +917,12 @@ export function ClipboardCreatorClient() {
                 Clipboard Berhasil Dibuat!
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Buka tautan ini dari perangkat Anda yang lain untuk membaca atau menyalin konten:
+                Buka tautan ini dari komputer, laptop, atau HP Anda yang lain:
               </p>
             </div>
 
             {/* Link Copy Box */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
               <span className="text-xs sm:text-sm font-mono font-bold text-blue-600 dark:text-blue-400 truncate">
                 {createdData.url}
               </span>
@@ -728,23 +937,23 @@ export function ClipboardCreatorClient() {
             </div>
 
             {/* QR Code Container for Instant Mobile Scan */}
-            <div className="space-y-2 pt-1">
-              <div className="p-3 bg-white rounded-2xl inline-block shadow-inner border border-slate-100 dark:border-slate-800">
-                <div ref={qrContainerRef} className="w-[180px] h-[180px] flex items-center justify-center" />
+            <div className="space-y-1.5 pt-1">
+              <div className="p-2.5 bg-white rounded-2xl inline-block shadow-inner border border-slate-100 dark:border-slate-800">
+                <div ref={qrContainerRef} className="w-[170px] h-[170px] flex items-center justify-center" />
               </div>
-              <p className="text-[11px] text-slate-400">
-                Pindai kode QR di atas dengan kamera HP untuk langsung membuka clipboard
+              <p className="text-[10px] text-slate-400">
+                Pindai kode QR untuk membuka di smartphone
               </p>
             </div>
 
             {/* Action Buttons */}
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2 pt-1">
               <Link
                 href={`/clip/${createdData.slug}`}
-                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition-all"
+                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-500/20 flex items-center justify-center gap-1.5 transition-all"
               >
                 <span>Buka Halaman Clip</span>
-                <ArrowRight className="w-4 h-4" />
+                <ExternalLink className="w-4 h-4" />
               </Link>
 
               <button
@@ -753,12 +962,13 @@ export function ClipboardCreatorClient() {
                   setCreatedData(null);
                   setSlug('');
                   setTextContent('');
-                  handleRemoveImage();
+                  setAttachments([]);
                   setPassword('');
+                  setPasswordProtection(false);
                 }}
-                className="w-full py-2.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold transition-colors"
+                className="w-full py-2 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold transition-colors"
               >
-                Buat Clipboard Lainnya
+                Buat Clipboard Baru Lainnya
               </button>
             </div>
           </div>

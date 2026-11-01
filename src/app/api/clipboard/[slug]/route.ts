@@ -4,13 +4,36 @@ export const dynamic = 'force-dynamic';
 import {
   getServerSupabase,
   getSignedImageUrl,
-  deleteClipboardImage,
+  deleteClipboardFiles,
 } from '@/lib/clipboard/serverSupabase';
 import { verifyManagementToken } from '@/lib/clipboard/security';
-import { ClipboardItem } from '@/types/clipboard';
+import { ClipboardItem, ClipboardAttachment } from '@/types/clipboard';
 
 interface RouteContext {
   params: Promise<{ slug: string }>;
+}
+
+function extractAttachments(record: Record<string, unknown>): ClipboardAttachment[] {
+  if (record.attachments && Array.isArray(record.attachments)) {
+    return record.attachments as ClipboardAttachment[];
+  }
+  if (!record.image_path || typeof record.image_path !== 'string') return [];
+  try {
+    const parsed = JSON.parse(record.image_path);
+    if (Array.isArray(parsed)) return parsed as ClipboardAttachment[];
+  } catch {
+    // Plain string legacy image path
+  }
+  return [
+    {
+      id: 'legacy-1',
+      name: 'lampiran-gambar.png',
+      size: 0,
+      type: 'image',
+      mimeType: 'image/png',
+      path: record.image_path,
+    },
+  ];
 }
 
 export async function GET(req: NextRequest, context: RouteContext) {
@@ -73,7 +96,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const isPasswordProtected = Boolean(record.password_hash);
     const isBurnAfterRead = record.burn_after_read !== false; // Default: true (Hapus setelah dibuka)
 
-    // If password-protected, redact text and image URL until verified
+    // If password-protected, redact text and attachments until verified
     if (isPasswordProtected) {
       return NextResponse.json({
         success: true,
@@ -83,6 +106,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
           textContent: null,
           imagePath: null,
           imageUrl: null,
+          attachments: [],
           createdAt: record.created_at,
           expiresAt: record.expires_at,
           isPasswordProtected: true,
@@ -93,11 +117,15 @@ export async function GET(req: NextRequest, context: RouteContext) {
       });
     }
 
-    // Generate secure temporary signed URL for private image
-    let signedUrl: string | null = null;
-    if (record.image_path) {
-      signedUrl = await getSignedImageUrl(record.image_path, expiresAt);
+    // Generate secure temporary signed URLs for all attachments
+    const rawAttachments = extractAttachments(record);
+    const resolvedAttachments: ClipboardAttachment[] = [];
+    for (const att of rawAttachments) {
+      const signedUrl = await getSignedImageUrl(att.path, expiresAt);
+      resolvedAttachments.push({ ...att, url: signedUrl });
     }
+
+    const legacyImageUrl = resolvedAttachments.find((a) => a.type === 'image')?.url || null;
 
     let isBurned = false;
     // Jika dibuka di perangkat lain (tanpa token manajemen) dan mode burnAfterRead aktif:
@@ -112,7 +140,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
       slug: record.slug,
       textContent: record.text_content,
       imagePath: record.image_path,
-      imageUrl: signedUrl,
+      imageUrl: legacyImageUrl,
+      attachments: resolvedAttachments,
       createdAt: record.created_at,
       expiresAt: record.expires_at,
       isPasswordProtected: false,
@@ -156,7 +185,7 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
 
     const { data: record, error: findError } = await supabase
       .from('clipboards')
-      .select('id, slug, image_path, management_token_hash')
+      .select('*')
       .eq('slug', cleanSlug)
       .maybeSingle();
 
@@ -175,9 +204,15 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
       );
     }
 
-    // Delete image from storage if present
-    if (record.image_path) {
-      await deleteClipboardImage(record.image_path);
+    // Delete all attachment files from storage
+    const attachments = extractAttachments(record);
+    const filePaths = attachments.map((a) => a.path).filter(Boolean);
+    if (record.image_path && typeof record.image_path === 'string' && !filePaths.includes(record.image_path) && !record.image_path.startsWith('[')) {
+      filePaths.push(record.image_path);
+    }
+
+    if (filePaths.length > 0) {
+      await deleteClipboardFiles(filePaths);
     }
 
     // Delete DB record

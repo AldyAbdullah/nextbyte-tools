@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
+
 import { validateSlug } from '@/lib/clipboard/slug';
 import {
   generateManagementToken,
@@ -10,62 +12,24 @@ import {
 } from '@/lib/clipboard/security';
 import {
   getServerSupabase,
-  uploadClipboardImage,
+  uploadClipboardFile,
+  detectAttachmentType,
 } from '@/lib/clipboard/serverSupabase';
-import { ClipboardExpiry } from '@/types/clipboard';
+import { ClipboardExpiry, ClipboardAttachment } from '@/types/clipboard';
 
 const MAX_TEXT_BYTES = 100 * 1024; // 100 KB
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
+const MAX_TOTAL_FILES_BYTES = 25 * 1024 * 1024; // 25 MB total
+const MAX_FILES_COUNT = 5;
 
-const ALLOWED_MIME_TYPES = new Map<string, string>([
-  ['image/jpeg', 'jpg'],
-  ['image/jpg', 'jpg'],
-  ['image/png', 'png'],
-  ['image/webp', 'webp'],
+// Supported extensions and MIME types
+const ALLOWED_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'webp',
+  'doc', 'docx',
+  'xls', 'xlsx',
+  'ppt', 'pptx',
+  'pdf',
 ]);
-
-/**
- * Validates image magic bytes to ensure the binary data matches allowed raster formats.
- */
-function isValidImageBytes(buffer: Buffer, mimeType: string): boolean {
-  if (buffer.length < 12) return false;
-
-  // JPEG: FF D8 FF
-  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-  }
-
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (mimeType === 'image/png') {
-    return (
-      buffer[0] === 0x89 &&
-      buffer[1] === 0x50 &&
-      buffer[2] === 0x4e &&
-      buffer[3] === 0x47 &&
-      buffer[4] === 0x0d &&
-      buffer[5] === 0x0a &&
-      buffer[6] === 0x1a &&
-      buffer[7] === 0x0a
-    );
-  }
-
-  // WebP: 'RIFF' .... 'WEBP'
-  if (mimeType === 'image/webp') {
-    const isRiff =
-      buffer[0] === 0x52 &&
-      buffer[1] === 0x49 &&
-      buffer[2] === 0x46 &&
-      buffer[3] === 0x46;
-    const isWebp =
-      buffer[8] === 0x57 &&
-      buffer[9] === 0x45 &&
-      buffer[10] === 0x42 &&
-      buffer[11] === 0x50;
-    return isRiff && isWebp;
-  }
-
-  return false;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -82,8 +46,7 @@ export async function POST(req: NextRequest) {
     const textContent = formData.get('textContent')?.toString() || '';
     const expiry = (formData.get('expiry')?.toString() || '12h') as ClipboardExpiry;
     const password = formData.get('password')?.toString() || '';
-    const imageFile = formData.get('image') as File | null;
-    const burnAfterRead = formData.get('burnAfterRead') !== 'false'; // Default: True (Hapus setelah dibuka)
+    const burnAfterRead = formData.get('burnAfterRead') !== 'false'; // Default: True
 
     // 1. Validate Slug
     const slugValidation = validateSlug(rawSlug);
@@ -95,13 +58,28 @@ export async function POST(req: NextRequest) {
     }
     const cleanSlug = rawSlug.trim().toLowerCase();
 
-    // 2. Validate Content (At least text or image must be provided)
-    const hasText = Boolean(textContent && textContent.trim().length > 0);
-    const hasImage = Boolean(imageFile && imageFile.size > 0);
+    // 2. Collect files (supports multi-file 'files' or legacy single 'image')
+    const filesToUpload: File[] = [];
+    const allFiles = formData.getAll('files');
+    for (const item of allFiles) {
+      if (item instanceof File && item.size > 0) {
+        filesToUpload.push(item);
+      }
+    }
+    // Check fallback legacy 'image' field
+    if (filesToUpload.length === 0) {
+      const legacyImage = formData.get('image');
+      if (legacyImage instanceof File && legacyImage.size > 0) {
+        filesToUpload.push(legacyImage);
+      }
+    }
 
-    if (!hasText && !hasImage) {
+    const hasText = Boolean(textContent && textContent.trim().length > 0);
+    const hasAttachments = filesToUpload.length > 0;
+
+    if (!hasText && !hasAttachments) {
       return NextResponse.json(
-        { success: false, error: 'Harap sertakan teks atau unggah gambar untuk membuat clipboard.' },
+        { success: false, error: 'Harap sertakan teks atau lampirkan berkas untuk membuat clipboard.' },
         { status: 400 }
       );
     }
@@ -117,53 +95,70 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Validate and Process Image if provided
-    let uploadedImagePath: string | null = null;
-    if (hasImage && imageFile) {
-      if (imageFile.size > MAX_IMAGE_BYTES) {
+    // 4. Validate Files (Count, Size, Format)
+    if (filesToUpload.length > MAX_FILES_COUNT) {
+      return NextResponse.json(
+        { success: false, error: `Maksimal lampiran adalah ${MAX_FILES_COUNT} berkas sekaligus.` },
+        { status: 400 }
+      );
+    }
+
+    let totalFilesSize = 0;
+    for (const file of filesToUpload) {
+      if (file.size > MAX_SINGLE_FILE_BYTES) {
         return NextResponse.json(
-          { success: false, error: 'Ukuran gambar melebihi batas maksimal 5 MB.' },
+          { success: false, error: `Berkas "${file.name}" melebihi batas maksimal 10 MB.` },
           { status: 400 }
         );
       }
+      totalFilesSize += file.size;
 
-      const mime = imageFile.type.toLowerCase();
-      const ext = ALLOWED_MIME_TYPES.get(mime);
-      if (!ext) {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (!ALLOWED_EXTENSIONS.has(ext)) {
         return NextResponse.json(
           {
             success: false,
-            error: 'Format gambar tidak didukung. Harap gunakan format JPG, JPEG, PNG, atau WebP.',
+            error: `Format berkas "${file.name}" tidak didukung. Format yang diizinkan: JPG, PNG, WebP, DOC/DOCX, XLS/XLSX, PPT/PPTX, PDF.`,
           },
           { status: 400 }
         );
       }
+    }
 
-      const arrayBuffer = await imageFile.arrayBuffer();
+    if (totalFilesSize > MAX_TOTAL_FILES_BYTES) {
+      return NextResponse.json(
+        { success: false, error: 'Total ukuran seluruh lampiran melebihi batas 25 MB.' },
+        { status: 400 }
+      );
+    }
+
+    // 5. Upload files to Storage
+    const uploadedAttachments: ClipboardAttachment[] = [];
+    for (const file of filesToUpload) {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
+      const mime = file.type.toLowerCase() || 'application/octet-stream';
+      const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      if (!isValidImageBytes(buffer, mime)) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Berkas gambar tidak valid atau format data biner tidak cocok.',
-          },
-          { status: 400 }
-        );
-      }
-
-      // Upload to private bucket
-      const uploadRes = await uploadClipboardImage(buffer, mime, ext);
+      const uploadRes = await uploadClipboardFile(buffer, file.name, mime, ext);
       if ('error' in uploadRes) {
         return NextResponse.json(
           { success: false, error: uploadRes.error },
           { status: 500 }
         );
       }
-      uploadedImagePath = uploadRes.path;
+
+      uploadedAttachments.push({
+        id: crypto.randomUUID(),
+        name: file.name,
+        size: file.size,
+        type: detectAttachmentType(file.name, mime),
+        mimeType: mime,
+        path: uploadRes.path,
+      });
     }
 
-    // 5. Check if slug is already taken (or active)
+    // 6. Check if slug is already taken (or active)
     const { data: existing, error: checkError } = await supabase
       .from('clipboards')
       .select('id, expires_at')
@@ -184,7 +179,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `URL "${cleanSlug}" sudah digunakan oleh clipboard lain yang masih aktif. Silakan pilih nama lain.`,
+            error: `URL "${cleanSlug}" sudah digunakan oleh clip lain yang masih aktif. Silakan pilih nama lain.`,
           },
           { status: 409 }
         );
@@ -193,35 +188,46 @@ export async function POST(req: NextRequest) {
       await supabase.from('clipboards').delete().eq('id', existing.id);
     }
 
-    // 6. Security credentials
+    // 7. Security credentials
     const managementToken = generateManagementToken();
     const managementTokenHash = hashManagementToken(managementToken);
     const passwordHash = password.trim() ? hashPassword(password.trim()) : null;
     const expiresAt = calculateExpiresAt(expiry);
 
-    // 7. Insert to Supabase DB (supports burn_after_read with fallback)
-    const recordPayload = {
+    // Serialization for backward and forward compatibility
+    const attachmentsJson = uploadedAttachments.length > 0 ? JSON.stringify(uploadedAttachments) : null;
+    // Legacy image path for single photo backward compatibility:
+    const legacyImagePath = uploadedAttachments.length === 1 && uploadedAttachments[0].type === 'image'
+      ? uploadedAttachments[0].path
+      : attachmentsJson;
+
+    // 8. Insert to Supabase DB (supports attachments column with graceful fallback)
+    const recordPayload: Record<string, unknown> = {
       slug: cleanSlug,
       text_content: hasText ? textContent : null,
-      image_path: uploadedImagePath,
+      image_path: legacyImagePath,
       management_token_hash: managementTokenHash,
       password_hash: passwordHash,
       burn_after_read: burnAfterRead,
       expires_at: expiresAt.toISOString(),
+      attachments: uploadedAttachments,
     };
 
     let { error: insertError } = await supabase.from('clipboards').insert(recordPayload);
 
-    // If column burn_after_read is missing from older migration, retry without it
-    if (insertError && insertError.message?.includes('burn_after_read')) {
-      const fallbackPayload = {
+    // If attachments or burn_after_read column is missing in DB schema, retry without it
+    if (insertError && (insertError.message?.includes('attachments') || insertError.message?.includes('burn_after_read'))) {
+      const fallbackPayload: Record<string, unknown> = {
         slug: cleanSlug,
         text_content: hasText ? textContent : null,
-        image_path: uploadedImagePath,
+        image_path: legacyImagePath,
         management_token_hash: managementTokenHash,
         password_hash: passwordHash,
         expires_at: expiresAt.toISOString(),
       };
+      if (!insertError.message?.includes('burn_after_read')) {
+        fallbackPayload.burn_after_read = burnAfterRead;
+      }
       const retryResult = await supabase.from('clipboards').insert(fallbackPayload);
       insertError = retryResult.error;
     }
@@ -251,6 +257,7 @@ export async function POST(req: NextRequest) {
       managementToken,
       expiresAt: expiresAt.toISOString(),
       burnAfterRead,
+      attachmentsCount: uploadedAttachments.length,
     });
   } catch (err) {
     console.error('Unexpected error in create clipboard:', err);

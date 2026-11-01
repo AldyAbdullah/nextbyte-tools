@@ -3,10 +3,33 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 import { getServerSupabase, getSignedImageUrl } from '@/lib/clipboard/serverSupabase';
 import { verifyPassword, verifyManagementToken } from '@/lib/clipboard/security';
-import { ClipboardItem } from '@/types/clipboard';
+import { ClipboardItem, ClipboardAttachment } from '@/types/clipboard';
 
 interface RouteContext {
   params: Promise<{ slug: string }>;
+}
+
+function extractAttachments(record: Record<string, unknown>): ClipboardAttachment[] {
+  if (record.attachments && Array.isArray(record.attachments)) {
+    return record.attachments as ClipboardAttachment[];
+  }
+  if (!record.image_path || typeof record.image_path !== 'string') return [];
+  try {
+    const parsed = JSON.parse(record.image_path);
+    if (Array.isArray(parsed)) return parsed as ClipboardAttachment[];
+  } catch {
+    // Plain string legacy image path
+  }
+  return [
+    {
+      id: 'legacy-1',
+      name: 'lampiran-gambar.png',
+      size: 0,
+      type: 'image',
+      mimeType: 'image/png',
+      path: record.image_path,
+    },
+  ];
 }
 
 export async function POST(req: NextRequest, context: RouteContext) {
@@ -77,10 +100,15 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const isBurnAfterRead = record.burn_after_read !== false; // Default: true
 
-    let signedUrl: string | null = null;
-    if (record.image_path) {
-      signedUrl = await getSignedImageUrl(record.image_path, expiresAt);
+    // Resolve attachments with signed URLs
+    const rawAttachments = extractAttachments(record);
+    const resolvedAttachments: ClipboardAttachment[] = [];
+    for (const att of rawAttachments) {
+      const signedUrl = await getSignedImageUrl(att.path, expiresAt);
+      resolvedAttachments.push({ ...att, url: signedUrl });
     }
+
+    const legacyImageUrl = resolvedAttachments.find((a) => a.type === 'image')?.url || null;
 
     let isBurned = false;
     // Jika dibuka di perangkat penerima (tanpa token manajemen) dan mode burnAfterRead aktif:
@@ -94,7 +122,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
       slug: record.slug,
       textContent: record.text_content,
       imagePath: record.image_path,
-      imageUrl: signedUrl,
+      imageUrl: legacyImageUrl,
+      attachments: resolvedAttachments,
       createdAt: record.created_at,
       expiresAt: record.expires_at,
       isPasswordProtected: true,
