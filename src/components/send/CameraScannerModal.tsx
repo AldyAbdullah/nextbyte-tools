@@ -154,7 +154,7 @@ export function CameraScannerModal({ onScan, onClose }: CameraScannerModalProps)
           {errorMessage && (
             <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-white space-y-2 p-5 text-center">
               <AlertCircle className="w-8 h-8 text-amber-400" />
-              <p className="text-xs text-slate-300 leading-relaxed">{errorMessage}</p>
+              <p className="text-xs text-slate-300 leading-relaxed break-words [overflow-wrap:anywhere]">{errorMessage}</p>
             </div>
           )}
         </div>

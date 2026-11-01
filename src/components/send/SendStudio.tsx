@@ -12,6 +12,8 @@ import {
   Download,
   FolderDown,
   FileCheck2,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -31,6 +33,17 @@ import { TransferProgressCard } from './TransferProgressCard';
 import { CameraScannerModal } from './CameraScannerModal';
 import { createFileReceiverHandle, FileReceiverHandle, FileReceiverResult } from '@/lib/webrtc/streamingStorage';
 import { useToast } from '@/components/common/Toast';
+
+interface PeerConnection {
+  open: boolean;
+  send: (data: unknown) => void;
+  dataChannel?: RTCDataChannel;
+  once?: (event: string, cb: () => void) => void;
+}
+
+interface WakeLockSentinelLike {
+  release: () => Promise<void>;
+}
 
 export function SendStudio() {
   const { showToast } = useToast();
@@ -59,6 +72,20 @@ export function SendStudio() {
   const transferRoleRef = useRef<'idle' | 'sender' | 'receiver'>('idle');
   const [targetPeer, setTargetPeer] = useState<LocalPeer | null>(null);
   const targetPeerRef = useRef<LocalPeer | null>(null);
+  const [targetPeers, setTargetPeers] = useState<LocalPeer[]>([]);
+  const targetPeersRef = useRef<LocalPeer[]>([]);
+  const acceptedConnsRef = useRef<Set<PeerConnection>>(new Set());
+  const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
+
+  // Quick Text Sharing states
+  const [textModalOpen, setTextModalOpen] = useState<boolean>(false);
+  const [textMessageInput, setTextMessageInput] = useState<string>('');
+  const [textTargetPeers, setTextTargetPeers] = useState<LocalPeer[]>([]);
+  const [incomingTextMessage, setIncomingTextMessage] = useState<{
+    senderName: string;
+    text: string;
+    timestamp: number;
+  } | null>(null);
   const [filesToSend, setFilesToSend] = useState<FileTransferItem[]>([]);
   const filesToSendRef = useRef<FileTransferItem[]>([]);
   const [receivedFiles, setReceivedFiles] = useState<FileReceiverResult[]>([]);
@@ -239,11 +266,22 @@ export function SendStudio() {
         }
 
         case 'TRANSFER_ACCEPT': {
-          // Sender receives acceptance from receiver -> start streaming files!
+          // Sender receives acceptance from receiver -> add to active connections and start streaming
+          acceptedConnsRef.current.add(conn);
           activeConnRef.current = conn;
           if (startSendingFilesRef.current) {
             startSendingFilesRef.current(conn);
           }
+          break;
+        }
+
+        case 'TEXT_MESSAGE': {
+          setIncomingTextMessage({
+            senderName: data.senderName || 'Perangkat Pengirim',
+            text: data.text || '',
+            timestamp: Date.now(),
+          });
+          showToast(`Pesan teks diterima dari ${data.senderName || 'perangkat sekitar'}!`, 'info');
           break;
         }
 
@@ -510,44 +548,57 @@ export function SendStudio() {
         const file = item.file;
         if (!file) continue;
 
-        conn.send({
-          type: 'FILE_START',
-          index: fileIndex,
-          id: item.id,
-          name: item.name,
-          size: item.size,
-          mimeType: item.type || 'application/octet-stream',
-        });
+        // Broadcast to all accepted peer connections
+        const activeConns = Array.from(acceptedConnsRef.current).filter((c) => c.open);
+        const targetConns = activeConns.length > 0 ? activeConns : [conn as PeerConnection];
 
-        const chunkSize = 32 * 1024; // 32 KB chunk
+        for (const c of targetConns) {
+          if (c.open) {
+            c.send({
+              type: 'FILE_START',
+              index: fileIndex,
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              mimeType: item.type || 'application/octet-stream',
+            });
+          }
+        }
+
+        const chunkSize = 64 * 1024; // 64 KB chunk for higher throughput
         let offset = 0;
 
         while (offset < file.size) {
           if (isCancelledRef.current) throw new Error('Transfer dibatalkan.');
 
-          // Flow control with RTCDataChannel bufferedAmount
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const dc = (conn as any).dataChannel as RTCDataChannel;
-          if (dc && dc.bufferedAmount > 3 * 1024 * 1024) {
-            await new Promise<void>((resolve) => {
-              const onLow = () => {
-                dc.removeEventListener('bufferedamountlow', onLow);
-                resolve();
-              };
-              dc.addEventListener('bufferedamountlow', onLow);
-              setTimeout(resolve, 50); // safety fallback
-            });
+          // Flow control with RTCDataChannel bufferedAmount on all target connections
+          for (const c of targetConns) {
+            const dc = c.dataChannel;
+            if (dc && dc.bufferedAmount > 3 * 1024 * 1024) {
+              await new Promise<void>((resolve) => {
+                const onLow = () => {
+                  dc.removeEventListener('bufferedamountlow', onLow);
+                  resolve();
+                };
+                dc.addEventListener('bufferedamountlow', onLow);
+                setTimeout(resolve, 50); // safety fallback
+              });
+            }
           }
 
           const end = Math.min(offset + chunkSize, file.size);
           const slice = file.slice(offset, end);
           const buffer = await slice.arrayBuffer();
 
-          conn.send({
-            type: 'CHUNK',
-            fileIndex,
-            chunk: buffer,
-          });
+          for (const c of targetConns) {
+            if (c.open) {
+              c.send({
+                type: 'CHUNK',
+                fileIndex,
+                chunk: buffer,
+              });
+            }
+          }
 
           offset = end;
           bytesTransferred += buffer.byteLength;
@@ -579,14 +630,24 @@ export function SendStudio() {
           }
         }
 
-        conn.send({
-          type: 'FILE_END',
-          index: fileIndex,
-          name: item.name,
-        });
+        for (const c of targetConns) {
+          if (c.open) {
+            c.send({
+              type: 'FILE_END',
+              index: fileIndex,
+              name: item.name,
+            });
+          }
+        }
       }
 
-      conn.send({ type: 'TRANSFER_COMPLETE' });
+      const activeConns = Array.from(acceptedConnsRef.current).filter((c) => c.open);
+      const targetConns = activeConns.length > 0 ? activeConns : [conn as PeerConnection];
+      for (const c of targetConns) {
+        if (c.open) {
+          c.send({ type: 'TRANSFER_COMPLETE' });
+        }
+      }
       setStatus('completed');
       try {
         confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
@@ -606,21 +667,185 @@ export function SendStudio() {
     startSendingFilesRef.current = startSendingFiles;
   }, [startSendingFiles]);
 
+  // Screen WakeLock to prevent mobile device from sleeping during transfer
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('wakeLock' in navigator)) return;
+
+    if (status === 'transferring') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (navigator as any).wakeLock
+        ?.request('screen')
+        .then((wl: WakeLockSentinelLike) => {
+          wakeLockRef.current = wl;
+        })
+        .catch(() => {});
+    } else {
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+    }
+  }, [status]);
+
+  // Automatic Wi-Fi Local Peer Discovery Heartbeat
+  useEffect(() => {
+    if (!myPeer || typeof window === 'undefined') return;
+    let isMounted = true;
+    const myPeerId = `nb_${myPin}`;
+
+    const syncWifiPeers = async () => {
+      try {
+        const res = await fetch('/api/send/peers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            peer: {
+              id: myPeerId,
+              name: myPeer.name,
+              deviceType: myPeer.deviceType,
+              os: myPeer.os,
+              browser: myPeer.browser,
+              lastSeen: Date.now(),
+            },
+            roomId: connectedPin || undefined,
+          }),
+        });
+
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          if (data.peers && Array.isArray(data.peers)) {
+            setNearbyPeers((prev) => {
+              const remoteMap = new Map<string, LocalPeer>();
+              data.peers.forEach((p: LocalPeer) => {
+                if (p.id !== myPeerId) remoteMap.set(p.id, p);
+              });
+              // Keep peers that have active connections
+              prev.forEach((p) => {
+                if (connectionsRef.current.has(p.id) && !remoteMap.has(p.id)) {
+                  remoteMap.set(p.id, p);
+                }
+              });
+              return Array.from(remoteMap.values());
+            });
+
+            // Automatically pre-connect to peers in background so they are immediately ready
+            data.peers.forEach((remote: LocalPeer) => {
+              if (remote.id && remote.id !== myPeerId) {
+                const existing = connectionsRef.current.get(remote.id);
+                if (!existing || !existing.open) {
+                  connectToPeer(remote.id);
+                }
+              }
+            });
+          }
+        }
+      } catch {
+        // Silently ignore background polling errors
+      }
+    };
+
+    syncWifiPeers();
+    const interval = setInterval(syncWifiPeers, 3000);
+
+    const handleCleanup = () => {
+      const url = `/api/send/peers?peerId=${encodeURIComponent(myPeerId)}${
+        connectedPin ? `&roomId=${encodeURIComponent(connectedPin)}` : ''
+      }`;
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url);
+      } else {
+        fetch(url, { method: 'DELETE', keepalive: true }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('beforeunload', handleCleanup);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleCleanup);
+      handleCleanup();
+    };
+  }, [myPeer, myPin, connectedPin, connectToPeer]);
+
   // User clicks on a nearby peer in radar
   const handleSelectPeerToTarget = (peer: LocalPeer) => {
     targetPeerRef.current = peer;
     setTargetPeer(peer);
+    targetPeersRef.current = [peer];
+    setTargetPeers([peer]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
       fileInputRef.current.click();
     }
   };
 
+  // User selects multiple peers for broadcast
+  const handleSelectMultiplePeersToTarget = (peers: LocalPeer[]) => {
+    if (peers.length === 0) return;
+    targetPeerRef.current = peers[0];
+    setTargetPeer(peers[0]);
+    targetPeersRef.current = peers;
+    setTargetPeers(peers);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  // Open Quick Text modal
+  const handleOpenSendTextModal = (peers: LocalPeer[]) => {
+    setTextTargetPeers(peers);
+    setTextMessageInput('');
+    setTextModalOpen(true);
+  };
+
+  // Send Quick Text message via WebRTC
+  const handleSendTextMessage = async () => {
+    if (!textMessageInput.trim() || textTargetPeers.length === 0) return;
+    const msg = textMessageInput.trim();
+    setTextModalOpen(false);
+
+    let sentCount = 0;
+    for (const peer of textTargetPeers) {
+      let conn = connectionsRef.current.get(peer.id);
+      if (!conn || !conn.open) {
+        conn = connectToPeer(peer.id);
+        if (conn) {
+          await new Promise<void>((res) => {
+            conn.once('open', res);
+            setTimeout(res, 2000);
+          });
+        }
+      }
+
+      if (conn && conn.open) {
+        conn.send({
+          type: 'TEXT_MESSAGE',
+          senderName: myPeer?.name || 'Perangkat Pengirim',
+          text: msg,
+        });
+        sentCount++;
+      }
+    }
+
+    if (sentCount > 0) {
+      showToast(`Teks berhasil dikirim ke ${sentCount} perangkat!`, 'success');
+    } else {
+      showToast('Gagal mengirim teks ke perangkat tujuan.', 'error');
+    }
+  };
+
   // User selected files from native file picker
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
-    const peer = targetPeerRef.current || targetPeer;
-    if (!selected || selected.length === 0 || !peer) return;
+    const peersToTarget =
+      targetPeersRef.current.length > 0
+        ? targetPeersRef.current
+        : targetPeerRef.current
+        ? [targetPeerRef.current]
+        : [];
+    if (!selected || selected.length === 0 || peersToTarget.length === 0) return;
 
     cleanupTransfer();
     setTransferRole('sender');
@@ -628,6 +853,7 @@ export function SendStudio() {
     setReceivedFiles([]);
     receivedFilesRef.current = [];
     isCancelledRef.current = false;
+    acceptedConnsRef.current.clear();
 
     const fileItems: FileTransferItem[] = Array.from(selected).map((f) => ({
       id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -654,32 +880,37 @@ export function SendStudio() {
       elapsedSeconds: 0,
     });
 
-    // Ensure connection is established
-    let conn = connectionsRef.current.get(peer.id);
-    if (!conn || !conn.open) {
-      conn = connectToPeer(peer.id);
-      if (conn) {
-        await new Promise<void>((res) => {
-          conn.once('open', res);
-          setTimeout(res, 2500);
+    // Send transfer request to all target peers
+    let sentCount = 0;
+    for (const peer of peersToTarget) {
+      let conn = connectionsRef.current.get(peer.id);
+      if (!conn || !conn.open) {
+        conn = connectToPeer(peer.id);
+        if (conn) {
+          await new Promise<void>((res) => {
+            conn.once('open', res);
+            setTimeout(res, 2000);
+          });
+        }
+      }
+
+      if (conn && conn.open) {
+        conn.send({
+          type: 'TRANSFER_REQUEST',
+          senderName: myPeer?.name || 'Perangkat Pengirim',
+          files: fileItems.map((f) => ({
+            id: f.id,
+            name: f.name,
+            size: f.size,
+            type: f.type,
+          })),
+          totalBytes,
         });
+        sentCount++;
       }
     }
 
-    activeConnRef.current = conn;
-    if (conn && conn.open) {
-      conn.send({
-        type: 'TRANSFER_REQUEST',
-        senderName: myPeer?.name || 'Perangkat Pengirim',
-        files: fileItems.map((f) => ({
-          id: f.id,
-          name: f.name,
-          size: f.size,
-          type: f.type,
-        })),
-        totalBytes,
-      });
-    } else {
+    if (sentCount === 0) {
       setStatus('error');
       setErrorMessage('Gagal menghubungi perangkat penerima.');
     }
@@ -735,12 +966,29 @@ export function SendStudio() {
         type: 'TRANSFER_CANCEL',
       });
     }
+    // Also cancel all accepted conns
+    for (const c of Array.from(acceptedConnsRef.current)) {
+      if (c && c.open) {
+        try {
+          c.send({ type: 'TRANSFER_CANCEL' });
+        } catch {}
+      }
+    }
+    acceptedConnsRef.current.clear();
+    if (wakeLockRef.current) {
+      try {
+        wakeLockRef.current.release();
+      } catch {}
+      wakeLockRef.current = null;
+    }
     cleanupTransfer();
     setTransferRole('idle');
     transferRoleRef.current = 'idle';
     setStatus('idle');
     setTargetPeer(null);
     targetPeerRef.current = null;
+    setTargetPeers([]);
+    targetPeersRef.current = [];
     setFilesToSend([]);
     filesToSendRef.current = [];
     setReceivedFiles([]);
@@ -750,12 +998,21 @@ export function SendStudio() {
   };
 
   const handleResetToRadar = () => {
+    acceptedConnsRef.current.clear();
+    if (wakeLockRef.current) {
+      try {
+        wakeLockRef.current.release();
+      } catch {}
+      wakeLockRef.current = null;
+    }
     cleanupTransfer();
     setTransferRole('idle');
     transferRoleRef.current = 'idle';
     setStatus('idle');
     setTargetPeer(null);
     targetPeerRef.current = null;
+    setTargetPeers([]);
+    targetPeersRef.current = [];
     setFilesToSend([]);
     filesToSendRef.current = [];
     setReceivedFiles([]);
@@ -870,6 +1127,8 @@ export function SendStudio() {
           myPin={myPin}
           connectedPin={connectedPin}
           onSelectPeer={handleSelectPeerToTarget}
+          onSelectMultiplePeers={handleSelectMultiplePeersToTarget}
+          onOpenSendTextModal={handleOpenSendTextModal}
           onShowQr={() => setShowQrModal(true)}
           onOpenScanner={() => setShowCameraScanner(true)}
           onJoinPin={handleJoinPin}
@@ -877,7 +1136,7 @@ export function SendStudio() {
       )}
 
       {/* 2. STATE: WAITING FOR RECEIVER TO ACCEPT */}
-      {status === 'waiting_for_receiver' && targetPeer && (
+      {status === 'waiting_for_receiver' && (targetPeer || targetPeers.length > 0) && (
         <div className="p-6 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-5 sm:space-y-6 max-w-lg mx-auto shadow-xl animate-in zoom-in-95 max-w-full overflow-hidden">
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shrink-0">
             <RefreshCw className="w-7 h-7 sm:w-8 sm:h-8 animate-spin" />
@@ -888,8 +1147,13 @@ export function SendStudio() {
               Menunggu Konfirmasi Penerima...
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Permintaan transfer telah dikirim ke <strong>{targetPeer.name}</strong>. Silakan klik tombol{' '}
-              <strong>Terima</strong> di layar penerima.
+              Permintaan transfer telah dikirim ke{' '}
+              <strong>
+                {targetPeers.length > 1
+                  ? `${targetPeers.length} Perangkat (${targetPeers.map((p) => p.name).join(', ')})`
+                  : targetPeer?.name || targetPeers[0]?.name || 'Perangkat Penerima'}
+              </strong>
+              . Silakan klik tombol <strong>Terima</strong> di layar penerima.
             </p>
           </div>
 
@@ -1028,7 +1292,13 @@ export function SendStudio() {
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 flex items-start gap-2">
                   <FolderDown className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                   <span>
-                    Berkas telah diterima oleh <strong>{targetPeer?.name || 'perangkat penerima'}</strong>. Silakan periksa layar perangkat penerima untuk mengklik tombol <strong>Simpan / Unduh</strong>.
+                    Berkas telah diterima oleh{' '}
+                    <strong>
+                      {targetPeers.length > 1
+                        ? `${targetPeers.length} perangkat penerima`
+                        : targetPeer?.name || targetPeers[0]?.name || 'perangkat penerima'}
+                    </strong>
+                    . Silakan periksa layar perangkat penerima untuk mengklik tombol <strong>Simpan / Unduh</strong>.
                   </span>
                 </div>
               </div>
@@ -1075,7 +1345,7 @@ export function SendStudio() {
           </div>
           <div className="space-y-1">
             <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Koneksi Terputus</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400 break-words [overflow-wrap:anywhere] leading-relaxed">
               {errorMessage || 'Jalur transfer terputus sebelum berkas selesai dikirim.'}
             </p>
           </div>
@@ -1092,7 +1362,7 @@ export function SendStudio() {
       {/* QR Code Modal for Showing THIS device's QR code */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95 max-w-full overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-in zoom-in-95 overflow-hidden">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider truncate">
                 QR Code Perangkat Ini
@@ -1135,6 +1405,123 @@ export function SendStudio() {
               {copiedLink ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               {copiedLink ? 'Tautan Disalin!' : 'Salin Tautan Pairing'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Text / Link Send Modal */}
+      {textModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 max-w-md w-full shadow-2xl text-left space-y-4 animate-in zoom-in-95 overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Kirim Teks / Tautan Langsung</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTextModalOpen(false)}
+                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Kirim catatan singkat, link, atau sandi secara langsung ke{' '}
+              <strong className="text-slate-700 dark:text-slate-200">
+                {textTargetPeers.length > 1
+                  ? `${textTargetPeers.length} Perangkat Terpilih`
+                  : textTargetPeers[0]?.name || 'Perangkat Penerima'}
+              </strong>
+              .
+            </p>
+
+            <textarea
+              rows={4}
+              value={textMessageInput}
+              onChange={(e) => setTextMessageInput(e.target.value)}
+              placeholder="Ketik atau tempel teks/tautan di sini..."
+              className="w-full p-3.5 text-xs sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-slate-900 dark:text-white resize-none"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setTextModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSendTextMessage}
+                disabled={!textMessageInput.trim()}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Kirim Sekarang</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Text / Link Received Modal */}
+      {incomingTextMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-7 max-w-md w-full shadow-2xl text-left space-y-4 animate-in zoom-in-95 overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Pesan Teks Masuk</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIncomingTextMessage(null)}
+                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Diterima dari <strong className="text-slate-700 dark:text-slate-200">{incomingTextMessage.senderName}</strong>:
+            </p>
+
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white break-words select-all font-mono whitespace-pre-wrap max-h-60 overflow-y-auto">
+              {incomingTextMessage.text}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <span className="text-[11px] text-slate-400">
+                100% P2P Terenkripsi
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(incomingTextMessage.text);
+                    showToast('Teks berhasil disalin ke papan klip!', 'success');
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 flex items-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Salin Teks</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIncomingTextMessage(null)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -45,9 +45,9 @@ export function IncomingTransferModal({
               key={file.id}
               className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-xs"
             >
-              <div className="flex items-center gap-2 truncate pr-2">
+              <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
                 <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{file.name}</span>
+                <span className="font-medium text-slate-800 dark:text-slate-200 truncate min-w-0">{file.name}</span>
               </div>
               <span className="text-slate-400 font-mono shrink-0">{formatBytes(file.size)}</span>
             </div>
