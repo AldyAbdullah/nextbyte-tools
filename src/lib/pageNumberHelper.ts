@@ -8,6 +8,21 @@ import {
 } from '@/types/pageNumber';
 
 /**
+ * Helper to extract plain text from a paragraph's XML (concatenating all <w:t> tags)
+ */
+export function extractParagraphText(pXml: string): string {
+  const matches = pXml.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi) || [];
+  return matches.map((m) => m.replace(/<[^>]+>/g, '')).join('');
+}
+
+/**
+ * Escape special regex characters in a string
+ */
+export function escapeRegex(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Inspect DOCX structure: sections, headers, footers, page breaks, and landscape orientations
  */
 export async function inspectDocxForPageNumbering(file: File): Promise<DocxInspectionResult> {
@@ -82,26 +97,24 @@ export async function inspectDocxForPageNumbering(file: File): Promise<DocxInspe
   const paragraphMatches = docXml.match(/<w:p\b/gi) || [];
   const detectedParagraphs = paragraphMatches.length;
 
-  // Extract detected heading text (BAB I, KATA PENGANTAR, etc.)
+  // Extract detected heading text (BAB I, KATA PENGANTAR, etc.) using clean plain text extraction
   const headings: string[] = [];
   const pRegex = /<w:p\b[^>]*>([\s\S]*?)<\/w:p>/gi;
   let pMatch: RegExpExecArray | null;
 
-  while ((pMatch = pRegex.exec(docXml)) !== null && headings.length < 10) {
+  while ((pMatch = pRegex.exec(docXml)) !== null && headings.length < 30) {
     const pContent = pMatch[1];
-    // Check if styled as heading or contains keywords
     const isHeadingStyle = /<w:pStyle\b[^>]*w:val=["']Heading\d*["']/i.test(pContent);
-    const tRegex = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi;
-    let tText = '';
-    let tm: RegExpExecArray | null;
-    while ((tm = tRegex.exec(pContent)) !== null) {
-      tText += tm[1];
-    }
-    const clean = tText.trim();
+    const clean = extractParagraphText(pMatch[0]).trim();
+
     if (
       clean.length > 2 &&
-      clean.length < 80 &&
-      (isHeadingStyle || /^(bab\s+[ivx\d]+|kata\s+pengantar|daftar\s+isi|abstrak|abstract|pendahuluan|lampiran)/i.test(clean))
+      clean.length < 90 &&
+      !headings.includes(clean) &&
+      (isHeadingStyle ||
+        /^(bab\s+[ivx\d]+|kata\s+pengantar|daftar\s+isi|daftar\s+tabel|daftar\s+gambar|abstrak|abstract|pendahuluan|tinjauan|metodologi|metode|hasil|pembahasan|kesimpulan|daftar\s+pustaka|lampiran)/i.test(
+          clean
+        ))
     ) {
       headings.push(clean);
     }
@@ -175,7 +188,6 @@ export function buildHeaderFooterXml(
   if (existingXml && existingXml.includes(`<${rootTag}`)) {
     // Check if it already has a page number field
     if (existingXml.includes('w:instr="PAGE"') || existingXml.includes('PAGE</w:instrText>')) {
-      // Update paragraph alignment and content of that field
       return existingXml.replace(
         /<w:p\b[^>]*>[\s\S]*?(?:w:instr="PAGE"|PAGE<\/w:instrText>)[\s\S]*?<\/w:p>/i,
         `<w:p>
@@ -330,7 +342,7 @@ export async function applyPageNumberingToDocx(
     return { relId, fileName };
   };
 
-  // Check how many sections exist in docXml
+  // Check how many sections exist in docXml initially
   const sectPrRegex = /<w:sectPr\b[^>]*>([\s\S]*?)<\/w:sectPr>/gi;
   const existingSects: { fullMatch: string; inner: string; index: number }[] = [];
   let sMatch: RegExpExecArray | null;
@@ -344,19 +356,92 @@ export async function applyPageNumberingToDocx(
   }
 
   // If Academic Preset was chosen, check if we need to split a 1-section document into 2 sections
-  if (config.preset === 'academic') {
-    if (existingSects.length <= 1 && config.academic.insertSectionBreakIfMissing) {
-      // Find suitable split point (e.g. before "BAB I" or after first page break)
-      const babMatch = /(<w:p\b[^>]*>(?:(?!<\/w:p>).)*?(?:bab\s+i\b|bab\s+1\b)[^<]*?<\/w:p>)/i.exec(docXml);
-      if (babMatch) {
-        const splitP = `<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p>`;
-        docXml = docXml.replace(babMatch[0], `${splitP}\n${babMatch[0]}`);
+  if (
+    config.preset === 'academic' &&
+    existingSects.length <= 1 &&
+    config.academic.insertSectionBreakIfMissing
+  ) {
+    // 1. Extract geometry from existing sectPr to inherit paper size and margins
+    let geometryXml = '';
+    const lastSectMatch = /<w:sectPr\b[^>]*>([\s\S]*?)<\/w:sectPr>/i.exec(docXml);
+    if (lastSectMatch) {
+      const pgSz =
+        /<w:pgSz\b[^>]*\/?>/i.exec(lastSectMatch[1])?.[0] || '<w:pgSz w:w="11906" w:h="16838"/>';
+      const pgMar =
+        /<w:pgMar\b[^>]*\/?>/i.exec(lastSectMatch[1])?.[0] ||
+        '<w:pgMar w:top="1701" w:right="1701" w:bottom="1701" w:left="2268"/>';
+      const cols = /<w:cols\b[^>]*\/?>/i.exec(lastSectMatch[1])?.[0] || '';
+      geometryXml = `\n    ${pgSz}\n    ${pgMar}${cols ? `\n    ${cols}` : ''}`;
+    } else {
+      geometryXml =
+        '\n    <w:pgSz w:w="11906" w:h="16838"/>\n    <w:pgMar w:top="1701" w:right="1701" w:bottom="1701" w:left="2268"/>';
+    }
+
+    const newSectBreak = `<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/>${geometryXml}</w:sectPr></w:pPr></w:p>`;
+
+    // 2. Scan paragraphs to locate split target
+    const pRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/gi;
+    let pMatch: RegExpExecArray | null;
+    let targetP: string | null = null;
+    let pageCount = 1;
+
+    const userSelected = config.academic.selectedHeading?.trim().toLowerCase();
+    const splitPageTarget = config.academic.splitPageNumber || 4;
+
+    while ((pMatch = pRegex.exec(docXml)) !== null) {
+      const pRaw = pMatch[0];
+      const pText = extractParagraphText(pRaw).trim();
+
+      // Check if paragraph contains page breaks
+      const pbs = pRaw.match(/<w:br\b[^>]*w:type=["']page["'][^>]*\/?>/gi) || [];
+      pageCount += pbs.length;
+
+      // Check Match Option A: User explicitly selected heading from list
+      if (userSelected && pText.toLowerCase().includes(userSelected)) {
+        targetP = pRaw;
+        break;
+      }
+
+      // Check Match Option B: Auto-detect BAB I / BAB 1 / Pendahuluan
+      if (!userSelected && /^(bab\s+(i|1)\b|bab\s+(i|1)\s+pendahuluan|pendahuluan\b)/i.test(pText)) {
+        targetP = pRaw;
+        break;
+      }
+
+      // Check Match Option C: Page-number based split
+      if (config.academic.splitMode === 'page' && pageCount >= splitPageTarget && pText.length > 0) {
+        targetP = pRaw;
+        break;
+      }
+    }
+
+    // 3. Insert Section Break
+    if (targetP) {
+      // Check if paragraph immediately preceding targetP is an empty page break paragraph
+      const precedingPbRegex = new RegExp(
+        `(<w:p\\b[^>]*>(?:(?!<\\/w:p>).)*?<w:br\\b[^>]*w:type=["']page["'][^>]*\\/?>[\\s\\S]*?<\\/w:p>\\s*)(${escapeRegex(
+          targetP
+        )})`,
+        'i'
+      );
+
+      if (precedingPbRegex.test(docXml)) {
+        // Replace the redundant page break with the section break so no blank page is created
+        docXml = docXml.replace(precedingPbRegex, `${newSectBreak}\n$2`);
       } else {
-        // Fallback: split after first manual page break if exists
-        const pbMatch = /<w:br\b[^>]*w:type=["']page["'][^>]*\/?>/i.exec(docXml);
-        if (pbMatch) {
-          const splitP = `</w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p>`;
-          docXml = docXml.replace(pbMatch[0], splitP);
+        // Prepend section break right before the target paragraph
+        docXml = docXml.replace(targetP, `${newSectBreak}\n${targetP}`);
+      }
+    } else {
+      // Fallback: If no Bab I or target heading found, split at the last page break before main body (or 2nd/3rd page break)
+      const allPageBreaks = [...docXml.matchAll(/<w:br\b[^>]*w:type=["']page["'][^>]*\/?>/gi)];
+      if (allPageBreaks.length >= 2) {
+        const targetPbIndex = Math.min(2, allPageBreaks.length - 1);
+        const pb = allPageBreaks[targetPbIndex];
+        if (pb && pb.index !== undefined) {
+          const before = docXml.slice(0, pb.index);
+          const after = docXml.slice(pb.index + pb[0].length);
+          docXml = `${before}${newSectBreak}${after}`;
         }
       }
     }
@@ -416,20 +501,22 @@ export async function applyPageNumberingToDocx(
       if (secIdx === 0) {
         // Section 0: Front Matter
         if (config.academic.coverNoNumber) {
-          // Add w:titlePg if not present
           if (!updatedInner.includes('<w:titlePg')) {
             updatedInner += '\n  <w:titlePg/>';
           }
-          // Remove existing first ref for this target
           const refTag = isFrontHeader ? 'w:headerReference' : 'w:footerReference';
-          updatedInner = updatedInner.replace(new RegExp(`<${refTag}\\b[^>]*w:type=["']first["'][^>]*\\/?>`, 'gi'), '');
-          // Add empty first ref
+          updatedInner = updatedInner.replace(
+            new RegExp(`<${refTag}\\b[^>]*w:type=["']first["'][^>]*\\/?>`, 'gi'),
+            ''
+          );
           updatedInner += `\n  <${refTag} w:type="first" r:id="${emptyPart.relId}"/>`;
         }
 
-        // Add default ref for front matter
         const refTag = isFrontHeader ? 'w:headerReference' : 'w:footerReference';
-        updatedInner = updatedInner.replace(new RegExp(`<${refTag}\\b[^>]*w:type=["']default["'][^>]*\\/?>`, 'gi'), '');
+        updatedInner = updatedInner.replace(
+          new RegExp(`<${refTag}\\b[^>]*w:type=["']default["'][^>]*\\/?>`, 'gi'),
+          ''
+        );
         updatedInner += `\n  <${refTag} w:type="default" r:id="${frontPart.relId}"/>`;
 
         // Set pgNumType to lowerRoman
@@ -438,7 +525,10 @@ export async function applyPageNumberingToDocx(
       } else {
         // Section 1+: Main Body
         const refTag = isBodyHeader ? 'w:headerReference' : 'w:footerReference';
-        updatedInner = updatedInner.replace(new RegExp(`<${refTag}\\b[^>]*w:type=["']default["'][^>]*\\/?>`, 'gi'), '');
+        updatedInner = updatedInner.replace(
+          new RegExp(`<${refTag}\\b[^>]*w:type=["']default["'][^>]*\\/?>`, 'gi'),
+          ''
+        );
         updatedInner += `\n  <${refTag} w:type="default" r:id="${bodyPart.relId}"/>`;
 
         // Set pgNumType to decimal starting at 1
@@ -449,7 +539,6 @@ export async function applyPageNumberingToDocx(
       secIdx++;
       return `<w:sectPr>${updatedInner}\n</w:sectPr>`;
     });
-
   } else {
     // Standard / Custom Preset
     const isHeader = config.position === 'header';
@@ -479,12 +568,18 @@ export async function applyPageNumberingToDocx(
         if (!updatedInner.includes('<w:titlePg')) {
           updatedInner += '\n  <w:titlePg/>';
         }
-        updatedInner = updatedInner.replace(new RegExp(`<${refTag}\\b[^>]*w:type=["']first["'][^>]*\\/?>`, 'gi'), '');
+        updatedInner = updatedInner.replace(
+          new RegExp(`<${refTag}\\b[^>]*w:type=["']first["'][^>]*\\/?>`, 'gi'),
+          ''
+        );
         updatedInner += `\n  <${refTag} w:type="first" r:id="${emptyPart.relId}"/>`;
       }
 
       // Add default reference
-      updatedInner = updatedInner.replace(new RegExp(`<${refTag}\\b[^>]*w:type=["']default["'][^>]*\\/?>`, 'gi'), '');
+      updatedInner = updatedInner.replace(
+        new RegExp(`<${refTag}\\b[^>]*w:type=["']default["'][^>]*\\/?>`, 'gi'),
+        ''
+      );
       updatedInner += `\n  <${refTag} w:type="default" r:id="${defaultPart.relId}"/>`;
 
       // Set pgNumType format and start

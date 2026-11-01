@@ -19,7 +19,7 @@ import {
   AlignRight,
   ShieldCheck,
   Check,
-  Compass
+  Compass,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import {
@@ -66,6 +66,8 @@ export function PageNumberStudio() {
       bodyStartNumber: 1,
       insertSectionBreakIfMissing: true,
       splitPageNumber: 4,
+      splitMode: 'auto',
+      selectedHeading: '',
     },
     customSections: [],
   });
@@ -177,7 +179,7 @@ export function PageNumberStudio() {
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
               Atur nomor halaman dokumen Word (.docx) secara presisi dengan standar akademik skripsi, tesis,
-              dan laporan: sampul tanpa nomor, halaman awal Romawi, isi angka Arab, dan nomor otomatis dinamis.
+              dan laporan: sampul tanpa nomor, halaman awal Romawi, isi angka Arab, dan otomatis buat section break.
             </p>
           </div>
 
@@ -287,7 +289,9 @@ export function PageNumberStudio() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-600 dark:text-slate-300">
                     <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-blue-100 dark:border-blue-900/60">
                       <span className="text-slate-400 block text-[10px]">Total Section:</span>
-                      <span className="font-bold text-slate-900 dark:text-white">{docInfo.totalSections} Section</span>
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {docInfo.totalSections} Section {docInfo.totalSections === 1 && '(Belum dipisah)'}
+                      </span>
                     </div>
                     <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-blue-100 dark:border-blue-900/60">
                       <span className="text-slate-400 block text-[10px]">Page Breaks:</span>
@@ -306,6 +310,12 @@ export function PageNumberStudio() {
                       </span>
                     </div>
                   </div>
+
+                  {docInfo.totalSections === 1 && (
+                    <p className="text-[11px] text-blue-700 dark:text-blue-300 font-medium pt-1">
+                      💡 Dokumen Anda belum memiliki Section Break di Word. Fitur <strong>Otomatis Buat Section Break</strong> di bawah akan membagi halaman awal (Romawi) dan bab isi (Angka 1) secara otomatis!
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -410,7 +420,7 @@ export function PageNumberStudio() {
 
                 <div className="space-y-4 pt-1">
                   {/* Option 1: Cover without number */}
-                  <label className="flex items-start gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                  <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={config.academic.coverNoNumber}
@@ -432,7 +442,7 @@ export function PageNumberStudio() {
                     </div>
                   </label>
 
-                  {/* Option 2: Front matter settings */}
+                  {/* Option 2: Front matter & Body settings */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
                       <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
@@ -485,31 +495,81 @@ export function PageNumberStudio() {
                     </div>
                   </div>
 
-                  {/* Section split assistance */}
-                  <label className="flex items-start gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={config.academic.insertSectionBreakIfMissing}
-                      onChange={(e) =>
-                        setConfig((prev) => ({
-                          ...prev,
-                          academic: {
-                            ...prev.academic,
-                            insertSectionBreakIfMissing: e.target.checked,
-                          },
-                        }))
-                      }
-                      className="mt-1 w-4 h-4 text-blue-600 rounded border-slate-300"
-                    />
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                        Otomatis Pisahkan Section Jika Dokumen Belum Memiliki Section Break
-                      </span>
-                      <span className="text-[11px] text-slate-500 block">
-                        Sistem akan mencari judul &quot;BAB I&quot; atau page break pertama untuk menyisipkan section break otomatis.
-                      </span>
-                    </div>
-                  </label>
+                  {/* Option 3: Section split assistance (Auto-add sections) */}
+                  <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.academic.insertSectionBreakIfMissing}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            academic: {
+                              ...prev.academic,
+                              insertSectionBreakIfMissing: e.target.checked,
+                            },
+                          }))
+                        }
+                        className="mt-1 w-4 h-4 text-blue-600 rounded border-slate-300"
+                      />
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                          Otomatis Buat Section Break (Jika Dokumen Belum Ada Section)
+                        </span>
+                        <span className="text-[11px] text-slate-500 block leading-relaxed">
+                          Menyisipkan Section Break (Next Page) otomatis sehingga halaman awal menjadi Romawi (i, ii, iii) dan Bab isi menjadi angka Arab (1, 2, 3) tanpa perlu mengedit section manual di Microsoft Word.
+                        </span>
+                      </div>
+                    </label>
+
+                    {/* Heading Selector for Split Point */}
+                    {config.academic.insertSectionBreakIfMissing && (
+                      <div className="pl-7 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-slate-700 dark:text-slate-300">
+                            Awal Mulai Bab Isi (Angka 1):
+                          </span>
+                          {docInfo?.totalSections && docInfo.totalSections > 1 ? (
+                            <span className="text-emerald-600 font-semibold text-[10px]">
+                              Dokumen sudah memiliki {docInfo.totalSections} section
+                            </span>
+                          ) : (
+                            <span className="text-blue-600 font-semibold text-[10px]">
+                              Mode Sisip Section Otomatis
+                            </span>
+                          )}
+                        </div>
+
+                        <select
+                          value={config.academic.selectedHeading || ''}
+                          onChange={(e) =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              academic: {
+                                ...prev.academic,
+                                selectedHeading: e.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 font-medium"
+                        >
+                          <option value="">✨ Otomatis Deteksi (BAB I / BAB 1 / PENDAHULUAN)</option>
+                          {docInfo?.previewHeadings &&
+                            docInfo.previewHeadings.map((headingText, i) => (
+                              <option key={i} value={headingText}>
+                                Judul Dokumen: {headingText}
+                              </option>
+                            ))}
+                        </select>
+
+                        <p className="text-[10px] text-slate-400 leading-snug">
+                          {config.academic.selectedHeading
+                            ? `Section break akan disisipkan tepat sebelum "${config.academic.selectedHeading}".`
+                            : 'Sistem akan memindai judul "BAB I" / "BAB 1" / "PENDAHULUAN" untuk membagi section secara otomatis.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

@@ -62,6 +62,8 @@ export interface PageNumberJobConfig {
     bodyStartNumber: number; // Mulai dari 1
     insertSectionBreakIfMissing: boolean; // Jika dokumen belum punya section break
     splitPageNumber: number; // Halaman awal bab isi jika hanya 1 section
+    splitMode?: 'auto' | 'heading' | 'page'; // Mode pemisahan section otomatis
+    selectedHeading?: string; // Judul heading yang dipilih untuk awal Bab Isi
   };
   // Pengaturan Kustom Per Section
   customSections: SectionNumberingConfig[];
