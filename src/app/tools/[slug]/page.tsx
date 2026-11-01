@@ -18,6 +18,7 @@ import {
   Binary, 
   Type, 
   AlignLeft,
+  Clipboard,
   Barcode,
   Sparkles,
   Share2,
@@ -43,6 +44,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Binary,
   Type,
   AlignLeft,
+  Clipboard,
 };
 
 interface ToolPageProps {
@@ -53,7 +55,7 @@ interface ToolPageProps {
 
 export function generateStaticParams() {
   return TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive'].includes(tool.slug)
+    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive', 'clipboard'].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
   }));
@@ -101,6 +103,9 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   }
   if (slug === 'send') {
     redirect('/send');
+  }
+  if (slug === 'clipboard') {
+    redirect('/clipboard');
   }
   if (slug === 'receive') {
     redirect('/receive');

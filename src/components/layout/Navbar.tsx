@@ -24,6 +24,7 @@ import {
   Share2,
   ShieldCheck,
   Layers,
+  Clipboard,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { SearchModal } from '@/components/common/SearchModal';
@@ -107,7 +108,7 @@ const TOOL_CATEGORIES: NavCategory[] = [
     ],
   },
   {
-    title: 'QR & BARCODE',
+    title: 'QR, BARCODE & SHARING',
     items: [
       {
         name: 'QR Code Generator',
@@ -124,6 +125,15 @@ const TOOL_CATEGORIES: NavCategory[] = [
         icon: Barcode,
         iconColor: 'text-cyan-600 dark:text-cyan-400',
         iconBg: 'bg-cyan-50 dark:bg-cyan-950/60',
+      },
+      {
+        name: 'Nextbyte Clipboard',
+        href: '/clipboard',
+        desc: 'Bagikan teks & gambar via URL unik',
+        icon: Clipboard,
+        badge: 'Baru',
+        iconColor: 'text-violet-600 dark:text-violet-400',
+        iconBg: 'bg-violet-50 dark:bg-violet-950/60',
       },
     ],
   },
@@ -188,6 +198,7 @@ export function Navbar() {
 
   const isToolsActive = pathname.startsWith('/tools');
   const isSendActive = pathname === '/send' || pathname.startsWith('/send') || pathname === '/receive';
+  const isClipboardActive = pathname.startsWith('/clipboard');
   const isAboutActive = pathname === '/about';
 
   return (
@@ -339,6 +350,22 @@ export function Navbar() {
               </span>
             </Link>
 
+            {/* Nextbyte Clipboard Nav Link */}
+            <Link
+              href="/clipboard"
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all ${
+                isClipboardActive
+                  ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 shadow-sm shadow-blue-500/5'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <Clipboard className="w-4 h-4 text-violet-500" />
+              <span>Clipboard</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                Baru
+              </span>
+            </Link>
+
             {/* About Nav Link */}
             <Link
               href="/about"
@@ -414,6 +441,24 @@ export function Navbar() {
                 </div>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
                   P2P Transfer
+                </span>
+              </Link>
+
+              <Link
+                href="/clipboard"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold ${
+                  isClipboardActive
+                    ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40'
+                    : 'text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Clipboard className="w-4 h-4 text-violet-500" />
+                  <span>Nextbyte Clipboard</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                  Baru
                 </span>
               </Link>
 

@@ -38,6 +38,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['send', 'file transfer', 'p2p', 'airdrop', 'webrtc', 'share', 'kirim file']
   },
   {
+    id: 'nextbyte-clipboard',
+    name: 'Nextbyte Clipboard',
+    slug: 'clipboard',
+    description: 'Simpan dan bagikan catatan teks, cuplikan kode, atau gambar antarperangkat secara instan lewat custom URL unik tanpa login dengan masa berlaku fleksibel.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Clipboard',
+    featured: true,
+    badge: 'Baru',
+    tags: ['clipboard', 'cl1p', 'pastebin', 'temp url', 'share text', 'share image', 'teks', 'gambar', 'catatan']
+  },
+  {
     id: 'mail-merge',
     name: 'Word Mail Merge',
     slug: 'mail-merge',

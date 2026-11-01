@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, X, QrCode, Barcode, KeyRound, FileCode2, Minimize2, Image, FileText, Link2, Binary, Type, AlignLeft, ArrowRight, Sparkles, Share2, Mail, ListOrdered, Eraser } from 'lucide-react';
+import { Search, X, QrCode, Barcode, KeyRound, FileCode2, Minimize2, Image, FileText, Link2, Binary, Type, AlignLeft,
+  Clipboard, ArrowRight, Sparkles, Share2, Mail, ListOrdered, Eraser } from 'lucide-react';
 import { TOOLS_REGISTRY } from '@/config/tools';
 import { ToolItem } from '@/types/tools';
 
@@ -23,6 +24,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Binary,
   Type,
   AlignLeft,
+  Clipboard,
 };
 
 interface SearchModalProps {
@@ -101,7 +103,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
               return (
                 <Link
                   key={tool.id}
-                  href={`/tools/${tool.slug}`}
+                  href={tool.slug === 'send' ? '/send' : tool.slug === 'clipboard' ? '/clipboard' : `/tools/${tool.slug}`}
                   onClick={onClose}
                   className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-all group"
                 >
