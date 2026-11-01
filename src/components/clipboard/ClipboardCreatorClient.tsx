@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   Clipboard,
   UploadCloud,
@@ -13,7 +12,6 @@ import {
   Lock,
   Clock,
   Sparkles,
-  ArrowRight,
   AlertCircle,
   Eye,
   EyeOff,
@@ -74,11 +72,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function ClipboardCreatorClient() {
-  const router = useRouter();
   const { showToast } = useToast();
-
-  // Quick Open Bar state
-  const [quickOpenSlug, setQuickOpenSlug] = useState<string>('');
 
   // Form states
   const [slug, setSlug] = useState<string>('');
@@ -249,15 +243,6 @@ export function ClipboardCreatorClient() {
     const generated = generateRandomSlug();
     setSlug(generated);
     setSlugTouched(true);
-  };
-
-  // Quick Open on another device
-  const handleQuickOpen = (e: React.FormEvent) => {
-    e.preventDefault();
-    const clean = sanitizeSlug(quickOpenSlug.trim().toLowerCase());
-    if (clean) {
-      router.push(`/clip/${clean}`);
-    }
   };
 
   // Handle Form Submission
@@ -437,48 +422,11 @@ export function ClipboardCreatorClient() {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-6 sm:py-10 space-y-8">
-      {/* 1. HERO SECTION & QUICK OPEN BAR */}
-      <div className="text-center space-y-3 max-w-2xl mx-auto animate-in fade-in duration-300">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-900/80 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+      {/* 1. HEADER BADGE */}
+      <div className="flex justify-center pt-2 animate-in fade-in duration-300">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-900/80 text-blue-700 dark:text-blue-400 text-xs font-semibold shadow-xs">
           <Sparkles className="w-3.5 h-3.5 animate-pulse" />
           <span>Nextbyte Clip • Berbagi Instan Lintas Perangkat</span>
-        </div>
-
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
-          Share anything, <span className="text-blue-600 dark:text-blue-400">instantly.</span>
-        </h1>
-
-        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-xl mx-auto">
-          Bagikan teks, catatan, kode, dokumen, atau gambar antarperangkat via custom URL tanpa login. Aman, praktis, dan otomatis terhapus.
-        </p>
-
-        {/* QUICK OPEN BAR (Akses cepat clip di perangkat lain) */}
-        <div className="pt-2 max-w-md mx-auto">
-          <form
-            onSubmit={handleQuickOpen}
-            className="bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-sm flex items-center justify-between gap-1.5"
-          >
-            <div className="relative flex-1 min-w-0">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400">
-                /clip/
-              </span>
-              <input
-                type="text"
-                value={quickOpenSlug}
-                onChange={(e) => setQuickOpenSlug(sanitizeSlug(e.target.value))}
-                placeholder="nama-clip"
-                className="w-full pl-12 pr-2 py-2 rounded-xl text-xs sm:text-sm font-mono font-bold bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={!quickOpenSlug.trim()}
-              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs transition-colors shrink-0 shadow-sm flex items-center gap-1"
-            >
-              <span>Buka</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </form>
         </div>
       </div>
 

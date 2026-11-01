@@ -522,19 +522,6 @@ export function ClipboardViewerClient({ slug }: ClipboardViewerClientProps) {
         </div>
       </div>
 
-      {/* BURN AFTER READ NOTICE BANNER */}
-      {item.isBurned && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-orange-500/15 via-red-500/15 to-amber-500/15 border-2 border-orange-500/30 text-slate-900 dark:text-white space-y-1.5 shadow-lg shadow-orange-500/5 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-center gap-2 font-bold text-orange-600 dark:text-orange-400 text-sm">
-            <Flame className="w-4 h-4 animate-pulse text-orange-500" />
-            <span>Clipboard Ini Telah Terhapus Otomatis (Burn After Read)</span>
-          </div>
-          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            Karena tautan ini telah dibuka di perangkat Anda, data telah <strong>langsung dihapus secara permanen dari server</strong> untuk menjaga privasi. Pastikan Anda menyalin teks atau mengunduh lampiran berkas sekarang sebelum menutup halaman ini!
-          </p>
-        </div>
-      )}
-
       {/* CONTENT AREA */}
       <div className="space-y-6">
         {/* 1. TEXT CONTENT CARD (Only shown if text exists) */}
