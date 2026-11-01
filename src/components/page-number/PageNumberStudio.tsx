@@ -20,6 +20,8 @@ import {
   ShieldCheck,
   Check,
   Compass,
+  Scissors,
+  Bookmark,
 } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import {
@@ -30,6 +32,7 @@ import {
   PageNumberAlignment,
   PageNumberFormat,
   PageNumberTextStyle,
+  SectionNumberingConfig,
 } from '@/types/pageNumber';
 import {
   inspectDocxForPageNumbering,
@@ -65,11 +68,42 @@ export function PageNumberStudio() {
       bodyAlignment: 'right',
       bodyStartNumber: 1,
       insertSectionBreakIfMissing: true,
+      splitMode: 'page',
       splitPageNumber: 4,
-      splitMode: 'auto',
       selectedHeading: '',
     },
-    customSections: [],
+    customSplit: {
+      enabled: true,
+      method: 'page',
+      targetPage: 2,
+      targetHeading: '',
+    },
+    customSections: [
+      {
+        sectionIndex: 0,
+        name: 'Section 1 (Halaman Awal / Surat)',
+        enabled: true,
+        differentFirstPage: false,
+        format: 'lowerRoman',
+        startNumber: 1,
+        restartNumbering: true,
+        position: 'footer',
+        alignment: 'center',
+        textStyle: 'number-only',
+      },
+      {
+        sectionIndex: 1,
+        name: 'Section 2 (Isi / Lampiran)',
+        enabled: true,
+        differentFirstPage: false,
+        format: 'decimal',
+        startNumber: 1,
+        restartNumbering: true,
+        position: 'footer',
+        alignment: 'right',
+        textStyle: 'number-only',
+      },
+    ],
   });
 
   // Handle DOCX upload & inspection
@@ -86,6 +120,27 @@ export function PageNumberStudio() {
     try {
       const inspected = await inspectDocxForPageNumbering(file);
       setDocInfo(inspected);
+
+      // If document already has multiple sections, populate custom sections
+      if (inspected.totalSections > 1) {
+        const newSections: SectionNumberingConfig[] = inspected.sections.map((sec, idx) => ({
+          sectionIndex: idx,
+          name: idx === 0 ? 'Section 1 (Halaman Awal)' : `Section ${idx + 1} (Lanjutan)`,
+          enabled: true,
+          differentFirstPage: sec.differentFirstPage,
+          format: idx === 0 ? 'lowerRoman' : 'decimal',
+          startNumber: 1,
+          restartNumbering: true,
+          position: 'footer',
+          alignment: idx === 0 ? 'center' : 'right',
+          textStyle: 'number-only',
+        }));
+        setConfig((prev) => ({
+          ...prev,
+          customSections: newSections,
+        }));
+      }
+
       showToast(
         `Berhasil memuat "${file.name}"! Terdeteksi ${inspected.totalSections} section dan ${inspected.detectedParagraphs} paragraf.`,
         'success'
@@ -96,6 +151,59 @@ export function PageNumberStudio() {
     } finally {
       setIsInspecting(false);
     }
+  };
+
+  // Helper to update custom sections
+  const updateCustomSection = (index: number, updates: Partial<SectionNumberingConfig>) => {
+    setConfig((prev) => {
+      const current =
+        prev.customSections && prev.customSections.length > 0
+          ? [...prev.customSections]
+          : [
+              {
+                sectionIndex: 0,
+                name: 'Section 1 (Halaman Awal / Surat)',
+                enabled: true,
+                differentFirstPage: false,
+                format: 'lowerRoman' as const,
+                startNumber: 1,
+                restartNumbering: true,
+                position: 'footer' as const,
+                alignment: 'center' as const,
+                textStyle: 'number-only' as const,
+              },
+              {
+                sectionIndex: 1,
+                name: 'Section 2 (Isi / Lampiran)',
+                enabled: true,
+                differentFirstPage: false,
+                format: 'decimal' as const,
+                startNumber: 1,
+                restartNumbering: true,
+                position: 'footer' as const,
+                alignment: 'right' as const,
+                textStyle: 'number-only' as const,
+              },
+            ];
+
+      if (!current[index]) {
+        current[index] = {
+          sectionIndex: index,
+          name: `Section ${index + 1}`,
+          enabled: true,
+          differentFirstPage: false,
+          format: 'decimal',
+          startNumber: 1,
+          restartNumbering: true,
+          position: 'footer',
+          alignment: 'right',
+          textStyle: 'number-only',
+        };
+      }
+
+      current[index] = { ...current[index], ...updates };
+      return { ...prev, customSections: current };
+    });
   };
 
   // Download Sample Document
@@ -163,6 +271,32 @@ export function PageNumberStudio() {
     }
   };
 
+  const sec0 = config.customSections?.[0] || {
+    sectionIndex: 0,
+    name: 'Section 1 (Halaman Awal / Surat)',
+    enabled: true,
+    differentFirstPage: false,
+    format: 'lowerRoman' as const,
+    startNumber: 1,
+    restartNumbering: true,
+    position: 'footer' as const,
+    alignment: 'center' as const,
+    textStyle: 'number-only' as const,
+  };
+
+  const sec1 = config.customSections?.[1] || {
+    sectionIndex: 1,
+    name: 'Section 2 (Isi / Lampiran)',
+    enabled: true,
+    differentFirstPage: false,
+    format: 'decimal' as const,
+    startNumber: 1,
+    restartNumbering: true,
+    position: 'footer' as const,
+    alignment: 'right' as const,
+    textStyle: 'number-only' as const,
+  };
+
   return (
     <div className="space-y-8">
       {/* Header Info Card */}
@@ -179,7 +313,7 @@ export function PageNumberStudio() {
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
               Atur nomor halaman dokumen Word (.docx) secara presisi dengan standar akademik skripsi, tesis,
-              dan laporan: sampul tanpa nomor, halaman awal Romawi, isi angka Arab, dan otomatis buat section break.
+              surat permohonan, atau kustom per-section: sampul tanpa nomor, Romawi, angka Arab, dan otomatis buat section break.
             </p>
           </div>
 
@@ -313,7 +447,7 @@ export function PageNumberStudio() {
 
                   {docInfo.totalSections === 1 && (
                     <p className="text-[11px] text-blue-700 dark:text-blue-300 font-medium pt-1">
-                      💡 Dokumen Anda belum memiliki Section Break di Word. Fitur <strong>Otomatis Buat Section Break</strong> di bawah akan membagi halaman awal (Romawi) dan bab isi (Angka 1) secara otomatis!
+                      💡 Dokumen Anda belum memiliki Section Break. Anda dapat menggunakan opsi <strong>Otomatis Buat Section Break</strong> di bawah untuk memilih halaman mulainya Section 2 secara praktis!
                     </p>
                   )}
                 </div>
@@ -329,7 +463,7 @@ export function PageNumberStudio() {
                 2. Pilih Skema Penomoran Halaman
               </h2>
               <p className="text-xs text-slate-500">
-                Gunakan preset akademik siap pakai untuk skripsi/laporan, atau atur nomor standar sesuai selera.
+                Gunakan preset akademik siap pakai untuk skripsi/laporan, standar berurutan, atau kustom bebas per-bagian.
               </p>
             </div>
 
@@ -340,7 +474,7 @@ export function PageNumberStudio() {
                   id: 'academic',
                   title: 'Skripsi & Akademik',
                   badge: 'Paling Populer',
-                  desc: 'Sampul tanpa nomor, Halaman awal Romawi (i, ii, iii), Bab isi angka Arab (1, 2, 3).',
+                  desc: 'Sampul tanpa nomor, Halaman awal Romawi (i, ii), Bab isi angka Arab (1, 2, 3).',
                   icon: BookOpen,
                 },
                 {
@@ -353,8 +487,8 @@ export function PageNumberStudio() {
                 {
                   id: 'custom',
                   title: 'Kustom Format',
-                  badge: 'Fleksibel',
-                  desc: 'Atur bebas format angka (Romawi/Arab), awalan, teks halaman, dan penempatan.',
+                  badge: 'Fleksibel Per-Section',
+                  desc: 'Atur bebas format angka (Romawi/Arab/Tanpa Nomor) berbeda untuk setiap section.',
                   icon: Layers,
                 },
               ].map((p) => {
@@ -522,51 +656,134 @@ export function PageNumberStudio() {
                       </div>
                     </label>
 
-                    {/* Heading Selector for Split Point */}
                     {config.academic.insertSectionBreakIfMissing && (
-                      <div className="pl-7 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                      <div className="pl-7 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-3">
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="font-bold text-slate-700 dark:text-slate-300">
-                            Awal Mulai Bab Isi (Angka 1):
+                            Tentukan Titik Mulai Bab Isi (Angka 1):
                           </span>
-                          {docInfo?.totalSections && docInfo.totalSections > 1 ? (
-                            <span className="text-emerald-600 font-semibold text-[10px]">
-                              Dokumen sudah memiliki {docInfo.totalSections} section
-                            </span>
-                          ) : (
-                            <span className="text-blue-600 font-semibold text-[10px]">
-                              Mode Sisip Section Otomatis
-                            </span>
-                          )}
+                          <span className="text-blue-600 font-semibold text-[10px] bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900">
+                            Pilihan Fleksibel
+                          </span>
                         </div>
 
-                        <select
-                          value={config.academic.selectedHeading || ''}
-                          onChange={(e) =>
-                            setConfig((prev) => ({
-                              ...prev,
-                              academic: {
-                                ...prev.academic,
-                                selectedHeading: e.target.value,
-                              },
-                            }))
-                          }
-                          className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 font-medium"
-                        >
-                          <option value="">✨ Otomatis Deteksi (BAB I / BAB 1 / PENDAHULUAN)</option>
-                          {docInfo?.previewHeadings &&
-                            docInfo.previewHeadings.map((headingText, i) => (
-                              <option key={i} value={headingText}>
-                                Judul Dokumen: {headingText}
-                              </option>
-                            ))}
-                        </select>
+                        {/* Tabs / Mode Selector */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                academic: { ...prev.academic, splitMode: 'page' },
+                              }))
+                            }
+                            className={`py-1.5 px-2 rounded-xl text-xs font-semibold border transition-all text-center ${
+                              config.academic.splitMode === 'page'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            📑 Nomor Halaman
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                academic: { ...prev.academic, splitMode: 'auto' },
+                              }))
+                            }
+                            className={`py-1.5 px-2 rounded-xl text-xs font-semibold border transition-all text-center ${
+                              config.academic.splitMode === 'auto'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            ✨ Deteksi BAB I
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                academic: { ...prev.academic, splitMode: 'heading' },
+                              }))
+                            }
+                            className={`py-1.5 px-2 rounded-xl text-xs font-semibold border transition-all text-center ${
+                              config.academic.splitMode === 'heading'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            📝 Pilih Judul
+                          </button>
+                        </div>
 
-                        <p className="text-[10px] text-slate-400 leading-snug">
-                          {config.academic.selectedHeading
-                            ? `Section break akan disisipkan tepat sebelum "${config.academic.selectedHeading}".`
-                            : 'Sistem akan memindai judul "BAB I" / "BAB 1" / "PENDAHULUAN" untuk membagi section secara otomatis.'}
-                        </p>
+                        {config.academic.splitMode === 'page' && (
+                          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                              Mulai Bab Isi di Halaman ke:
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={2}
+                                max={999}
+                                value={config.academic.splitPageNumber || 4}
+                                onChange={(e) =>
+                                  setConfig((prev) => ({
+                                    ...prev,
+                                    academic: {
+                                      ...prev.academic,
+                                      splitPageNumber: Math.max(2, parseInt(e.target.value) || 2),
+                                    },
+                                  }))
+                                }
+                                className="w-24 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-900 dark:text-white"
+                              />
+                              <span className="text-xs text-slate-500">
+                                (Halaman 1 s.d. {(config.academic.splitPageNumber || 4) - 1} = Romawi, Halaman {config.academic.splitPageNumber || 4} dst = Angka 1)
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {config.academic.splitMode === 'heading' && (
+                          <div className="space-y-1.5">
+                            <select
+                              value={config.academic.selectedHeading || ''}
+                              onChange={(e) =>
+                                setConfig((prev) => ({
+                                  ...prev,
+                                  academic: {
+                                    ...prev.academic,
+                                    selectedHeading: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 font-medium"
+                            >
+                              <option value="">-- Pilih Judul / Paragraf Dokumen --</option>
+                              {docInfo?.previewHeadings &&
+                                docInfo.previewHeadings.map((headingText, i) => (
+                                  <option key={i} value={headingText}>
+                                    Judul: {headingText}
+                                  </option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-slate-400">
+                              {config.academic.selectedHeading
+                                ? `Section break akan disisipkan tepat sebelum "${config.academic.selectedHeading}".`
+                                : 'Pilih judul bab dokumen di atas tempat angka Arab (1, 2, 3) dimulai.'}
+                            </p>
+                          </div>
+                        )}
+
+                        {config.academic.splitMode === 'auto' && (
+                          <div className="p-2.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 text-[11px] text-blue-700 dark:text-blue-300">
+                            ✨ Sistem akan memindai secara cerdas teks <strong>&quot;BAB I&quot;</strong>, <strong>&quot;BAB 1&quot;</strong>, atau <strong>&quot;PENDAHULUAN&quot;</strong> dan membuat section break tepat sebelum bab tersebut.
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -575,12 +792,12 @@ export function PageNumberStudio() {
             )}
 
             {/* ========================================================================= */}
-            {/* PRESET 2 & 3: STANDARD & CUSTOM OPTIONS                                   */}
+            {/* PRESET 2: STANDARD OPTIONS (SINGLE NUMBERING FORMAT)                      */}
             {/* ========================================================================= */}
-            {(config.preset === 'standard' || config.preset === 'custom') && (
+            {config.preset === 'standard' && (
               <div className="p-5 rounded-3xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 space-y-4">
                 <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                  Pengaturan Penomoran:
+                  Pengaturan Penomoran Dokumen:
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -711,6 +928,425 @@ export function PageNumberStudio() {
                 </label>
               </div>
             )}
+
+            {/* ========================================================================= */}
+            {/* PRESET 3: CUSTOM OPTIONS (PER-SECTION FORMATTING)                         */}
+            {/* ========================================================================= */}
+            {config.preset === 'custom' && (
+              <div className="p-5 rounded-3xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 space-y-6">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-blue-600" />
+                      Pengaturan Format Per Bagian (Per-Section):
+                    </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900">
+                      Format Bebas Per-Section
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Atur format nomor secara independen untuk setiap bagian (misal: Section 1 tanpa nomor / Romawi, Section 2 angka Arab).
+                  </p>
+                </div>
+
+                {/* Section Split Assistance if Document has 1 section */}
+                {(!docInfo || docInfo.totalSections <= 1) && (
+                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900 space-y-3 shadow-sm">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.customSplit?.enabled ?? true}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            customSplit: {
+                              ...prev.customSplit,
+                              enabled: e.target.checked,
+                            },
+                          }))
+                        }
+                        className="mt-1 w-4 h-4 text-blue-600 rounded border-slate-300"
+                      />
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                          Bagi Dokumen Menjadi 2 Section (Otomatis Sisipkan Section Break)
+                        </span>
+                        <span className="text-[11px] text-slate-500 block leading-relaxed">
+                          Otomatis menambahkan Section Break (Next Page) di Word sehingga Section 1 dan Section 2 memiliki format dan nomor halaman yang berbeda tanpa perlu edit manual di Word.
+                        </span>
+                      </div>
+                    </label>
+
+                    {config.customSplit?.enabled && (
+                      <div className="pl-7 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-slate-700 dark:text-slate-300">
+                            Pilih Titik Pemisahan Section 2:
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                customSplit: { ...prev.customSplit, method: 'page' },
+                              }))
+                            }
+                            className={`py-1.5 px-3 rounded-xl text-xs font-semibold border transition-all text-center flex items-center justify-center gap-1.5 ${
+                              config.customSplit?.method === 'page'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            <Scissors className="w-3.5 h-3.5" />
+                            Berdasarkan Nomor Halaman
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                customSplit: { ...prev.customSplit, method: 'heading' },
+                              }))
+                            }
+                            className={`py-1.5 px-3 rounded-xl text-xs font-semibold border transition-all text-center flex items-center justify-center gap-1.5 ${
+                              config.customSplit?.method === 'heading'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            <Bookmark className="w-3.5 h-3.5" />
+                            Berdasarkan Judul Paragraf
+                          </button>
+                        </div>
+
+                        {config.customSplit?.method === 'page' && (
+                          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                              Section 2 Mulai di Halaman ke:
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={2}
+                                max={999}
+                                value={config.customSplit?.targetPage || 2}
+                                onChange={(e) =>
+                                  setConfig((prev) => ({
+                                    ...prev,
+                                    customSplit: {
+                                      ...prev.customSplit,
+                                      targetPage: Math.max(2, parseInt(e.target.value) || 2),
+                                    },
+                                  }))
+                                }
+                                className="w-24 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-900 dark:text-white"
+                              />
+                              <span className="text-xs text-slate-500">
+                                (Contoh: Halaman 1 = Surat/Cover, Halaman {config.customSplit?.targetPage || 2} = Lampiran/Isi)
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {config.customSplit?.method === 'heading' && (
+                          <div className="space-y-1.5">
+                            <select
+                              value={config.customSplit?.targetHeading || ''}
+                              onChange={(e) =>
+                                setConfig((prev) => ({
+                                  ...prev,
+                                  customSplit: {
+                                    ...prev.customSplit,
+                                    targetHeading: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 font-medium"
+                            >
+                              <option value="">-- Pilih Judul / Paragraf Awal Section 2 --</option>
+                              {docInfo?.previewHeadings &&
+                                docInfo.previewHeadings.map((headingText, i) => (
+                                  <option key={i} value={headingText}>
+                                    Judul: {headingText}
+                                  </option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-slate-400">
+                              {config.customSplit?.targetHeading
+                                ? `Section break akan disisipkan tepat sebelum "${config.customSplit.targetHeading}".`
+                                : 'Pilih paragraf di mana Section 2 dimulai.'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Section 1 Card */}
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 font-bold text-xs flex items-center justify-center">
+                        1
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                        Bagian 1 (Section 1: Halaman Awal / Surat / Cover)
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                      Halaman Awal
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Format Angka Section 1 */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block">
+                        Format Nomor:
+                      </label>
+                      <select
+                        value={sec0.format}
+                        onChange={(e) =>
+                          updateCustomSection(0, { format: e.target.value as PageNumberFormat })
+                        }
+                        className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-slate-900 dark:text-white"
+                      >
+                        <option value="lowerRoman">i, ii, iii (Romawi Kecil)</option>
+                        <option value="decimal">1, 2, 3 (Angka Arab)</option>
+                        <option value="upperRoman">I, II, III (Romawi Besar)</option>
+                        <option value="none">Tanpa Nomor Halaman (Kosong)</option>
+                      </select>
+                    </div>
+
+                    {/* Posisi Section 1 */}
+                    {sec0.format !== 'none' && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block">
+                          Posisi:
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => updateCustomSection(0, { position: 'footer' })}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                              sec0.position === 'footer'
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            Bawah
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateCustomSection(0, { position: 'header' })}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                              sec0.position === 'header'
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            Atas
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Perataan Section 1 */}
+                    {sec0.format !== 'none' && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block">
+                          Perataan:
+                        </label>
+                        <div className="grid grid-cols-3 gap-1">
+                          {[
+                            { id: 'left', label: 'Kiri' },
+                            { id: 'center', label: 'Tengah' },
+                            { id: 'right', label: 'Kanan' },
+                          ].map((al) => (
+                            <button
+                              key={al.id}
+                              type="button"
+                              onClick={() =>
+                                updateCustomSection(0, { alignment: al.id as PageNumberAlignment })
+                              }
+                              className={`py-1.5 px-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                                sec0.alignment === al.id
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {al.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {sec0.format !== 'none' ? (
+                    <label className="flex items-center gap-2 pt-1 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sec0.differentFirstPage}
+                        onChange={(e) =>
+                          updateCustomSection(0, { differentFirstPage: e.target.checked })
+                        }
+                        className="w-4 h-4 text-blue-600 rounded border-slate-300"
+                      />
+                      <span>Hilangkan nomor pada halaman pertama Section 1 (Different First Page)</span>
+                    </label>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-500">
+                      💡 Halaman pada Section 1 tidak akan menampilkan nomor halaman (cocok untuk Surat Permohonan atau Cover).
+                    </div>
+                  )}
+                </div>
+
+                {/* Section 2 Card */}
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center">
+                        2
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                        Bagian 2 (Section 2: Halaman Isi / Lampiran)
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-900">
+                      Mulai Halaman {config.customSplit?.targetPage || 2}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Format Angka Section 2 */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block">
+                        Format Nomor:
+                      </label>
+                      <select
+                        value={sec1.format}
+                        onChange={(e) =>
+                          updateCustomSection(1, { format: e.target.value as PageNumberFormat })
+                        }
+                        className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-slate-900 dark:text-white"
+                      >
+                        <option value="decimal">1, 2, 3 (Angka Arab)</option>
+                        <option value="lowerRoman">i, ii, iii (Romawi Kecil)</option>
+                        <option value="upperRoman">I, II, III (Romawi Besar)</option>
+                        <option value="none">Tanpa Nomor Halaman (Kosong)</option>
+                      </select>
+                    </div>
+
+                    {/* Posisi Section 2 */}
+                    {sec1.format !== 'none' && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block">
+                          Posisi:
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => updateCustomSection(1, { position: 'footer' })}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                              sec1.position === 'footer'
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            Bawah
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateCustomSection(1, { position: 'header' })}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                              sec1.position === 'header'
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            Atas
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Perataan Section 2 */}
+                    {sec1.format !== 'none' && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block">
+                          Perataan:
+                        </label>
+                        <div className="grid grid-cols-3 gap-1">
+                          {[
+                            { id: 'left', label: 'Kiri' },
+                            { id: 'center', label: 'Tengah' },
+                            { id: 'right', label: 'Kanan' },
+                          ].map((al) => (
+                            <button
+                              key={al.id}
+                              type="button"
+                              onClick={() =>
+                                updateCustomSection(1, { alignment: al.id as PageNumberAlignment })
+                              }
+                              className={`py-1.5 px-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                                sec1.alignment === al.id
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {al.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {sec1.format !== 'none' && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-4 text-xs">
+                        <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                          <input
+                            type="radio"
+                            name="sec1_restart"
+                            checked={sec1.restartNumbering !== false}
+                            onChange={() => updateCustomSection(1, { restartNumbering: true })}
+                            className="w-3.5 h-3.5 text-blue-600"
+                          />
+                          <span>Mulai Ulang dari Nomor:</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          disabled={sec1.restartNumbering === false}
+                          value={sec1.startNumber || 1}
+                          onChange={(e) =>
+                            updateCustomSection(1, { startNumber: parseInt(e.target.value) || 1 })
+                          }
+                          className="w-16 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-slate-900 dark:text-white"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600 dark:text-slate-400">
+                        <input
+                          type="radio"
+                          name="sec1_restart"
+                          checked={sec1.restartNumbering === false}
+                          onChange={() => updateCustomSection(1, { restartNumbering: false })}
+                          className="w-3.5 h-3.5 text-blue-600"
+                        />
+                        <span>Lanjutkan dari Bagian Sebelumnya</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -725,31 +1361,79 @@ export function PageNumberStudio() {
 
             {/* Document Pages Mini-Mockup */}
             <div className="space-y-3 p-3 rounded-2xl bg-slate-100 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800">
-              {/* Page 1 Mockup: Cover */}
+              {/* PAGE 1 MOCKUP */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative space-y-2">
                 <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pb-1 border-b border-slate-100 dark:border-slate-800">
-                  <span>Halaman 1: Sampul (Cover)</span>
-                  <span className="text-amber-500 font-semibold">
-                    {config.preset === 'academic' || config.differentFirstPage
+                  <span>
+                    {config.preset === 'custom'
+                      ? 'Halaman 1: Bagian 1 (Surat / Cover)'
+                      : 'Halaman 1: Sampul (Cover)'}
+                  </span>
+                  <span className="font-semibold text-amber-500">
+                    {config.preset === 'academic' ||
+                    (config.preset === 'standard' && config.differentFirstPage) ||
+                    (config.preset === 'custom' && (sec0.format === 'none' || sec0.differentFirstPage))
                       ? 'Tanpa Nomor'
-                      : 'Bernomor'}
+                      : config.preset === 'custom'
+                      ? sec0.format === 'lowerRoman'
+                        ? 'i'
+                        : '1'
+                      : '1'}
                   </span>
                 </div>
                 <div className="space-y-1 py-1">
                   <div className="w-2/3 h-2 bg-slate-200 dark:bg-slate-700 rounded" />
                   <div className="w-1/2 h-1.5 bg-slate-100 dark:bg-slate-800 rounded" />
                 </div>
-                {!(config.preset === 'academic' || config.differentFirstPage) && (
-                  <div className="text-right text-[9px] font-mono font-bold text-blue-600">1</div>
+                {/* Number preview if visible */}
+                {config.preset === 'custom' && sec0.format !== 'none' && !sec0.differentFirstPage && (
+                  <div
+                    className={`text-[9px] font-mono font-bold text-blue-600 ${
+                      sec0.alignment === 'center'
+                        ? 'text-center'
+                        : sec0.alignment === 'left'
+                        ? 'text-left'
+                        : 'text-right'
+                    }`}
+                  >
+                    {sec0.format === 'lowerRoman' ? 'i' : sec0.format === 'upperRoman' ? 'I' : '1'}
+                  </div>
+                )}
+                {config.preset === 'standard' && !config.differentFirstPage && (
+                  <div
+                    className={`text-[9px] font-mono font-bold text-blue-600 ${
+                      config.alignment === 'center'
+                        ? 'text-center'
+                        : config.alignment === 'left'
+                        ? 'text-left'
+                        : 'text-right'
+                    }`}
+                  >
+                    1
+                  </div>
                 )}
               </div>
 
-              {/* Page 2 Mockup: Front Matter */}
+              {/* PAGE 2 MOCKUP */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative space-y-2">
                 <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pb-1 border-b border-slate-100 dark:border-slate-800">
-                  <span>Halaman 2: Kata Pengantar</span>
+                  <span>
+                    {config.preset === 'custom'
+                      ? `Halaman ${config.customSplit?.targetPage || 2}: Bagian 2 (Isi / Lampiran)`
+                      : 'Halaman 2: Bagian Awal / Isi'}
+                  </span>
                   <span className="text-blue-500 font-semibold font-mono">
-                    {config.preset === 'academic' ? 'ii' : '2'}
+                    {config.preset === 'academic'
+                      ? 'ii'
+                      : config.preset === 'custom'
+                      ? sec1.format === 'none'
+                        ? 'Tanpa Nomor'
+                        : sec1.format === 'decimal'
+                        ? sec1.startNumber || '1'
+                        : sec1.format === 'lowerRoman'
+                        ? 'i'
+                        : 'I'
+                      : '2'}
                   </span>
                 </div>
                 <div className="space-y-1 py-1">
@@ -757,48 +1441,58 @@ export function PageNumberStudio() {
                   <div className="w-5/6 h-1.5 bg-slate-100 dark:bg-slate-800 rounded" />
                 </div>
                 <div
-                  className={`text-[9px] font-mono font-bold text-blue-600 ${
-                    config.preset === 'academic'
-                      ? 'text-center'
+                  className={`text-[9px] font-mono font-bold ${
+                    config.preset === 'custom'
+                      ? sec1.alignment === 'center'
+                        ? 'text-center text-emerald-600'
+                        : sec1.alignment === 'left'
+                        ? 'text-left text-emerald-600'
+                        : 'text-right text-emerald-600'
+                      : config.preset === 'academic'
+                      ? 'text-center text-blue-600'
                       : config.alignment === 'center'
-                      ? 'text-center'
+                      ? 'text-center text-blue-600'
                       : config.alignment === 'left'
-                      ? 'text-left'
-                      : 'text-right'
+                      ? 'text-left text-blue-600'
+                      : 'text-right text-blue-600'
                   }`}
                 >
-                  {config.preset === 'academic' ? 'ii' : '2'}
+                  {config.preset === 'academic'
+                    ? 'ii'
+                    : config.preset === 'custom'
+                    ? sec1.format === 'none'
+                      ? ''
+                      : sec1.format === 'decimal'
+                      ? String(sec1.startNumber || 1)
+                      : sec1.format === 'lowerRoman'
+                      ? 'i'
+                      : 'I'
+                    : '2'}
                 </div>
               </div>
 
-              {/* Page 3 Mockup: Body */}
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative space-y-2">
-                <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pb-1 border-b border-slate-100 dark:border-slate-800">
-                  <span>Halaman 3: Bab I Isi</span>
-                  <span className="text-emerald-500 font-semibold font-mono">
-                    {config.preset === 'academic' ? '1' : '3'}
-                  </span>
-                </div>
-                <div className="space-y-1 py-1">
-                  <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded" />
-                  <div className="w-4/5 h-1.5 bg-slate-100 dark:bg-slate-800 rounded" />
-                </div>
-                <div
-                  className={`text-[9px] font-mono font-bold text-emerald-600 ${
-                    config.preset === 'academic'
-                      ? config.academic.bodyAlignment === 'center'
+              {/* PAGE 3 MOCKUP (For Academic Bab Isi) */}
+              {config.preset === 'academic' && (
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pb-1 border-b border-slate-100 dark:border-slate-800">
+                    <span>Halaman {config.academic.splitPageNumber || 4}: Bab I Isi</span>
+                    <span className="text-emerald-500 font-semibold font-mono">1</span>
+                  </div>
+                  <div className="space-y-1 py-1">
+                    <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded" />
+                    <div className="w-4/5 h-1.5 bg-slate-100 dark:bg-slate-800 rounded" />
+                  </div>
+                  <div
+                    className={`text-[9px] font-mono font-bold text-emerald-600 ${
+                      config.academic.bodyAlignment === 'center'
                         ? 'text-center'
                         : 'text-right'
-                      : config.alignment === 'center'
-                      ? 'text-center'
-                      : config.alignment === 'left'
-                      ? 'text-left'
-                      : 'text-right'
-                  }`}
-                >
-                  {config.preset === 'academic' ? '1' : '3'}
+                    }`}
+                  >
+                    1
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 text-[11px] text-slate-500 space-y-1">
