@@ -16,6 +16,7 @@ import {
   CheckSquare,
   Square,
   MessageSquare,
+  RefreshCw,
 } from 'lucide-react';
 import { LocalPeer } from '@/types/nextbyteSend';
 
@@ -24,6 +25,8 @@ interface LocalWifiRadarProps {
   peers: LocalPeer[];
   myPin: string;
   connectedPin: string | null;
+  isConnectingPin?: string | null;
+  onCancelConnectingPin?: () => void;
   onSelectPeer: (peer: LocalPeer) => void;
   onSelectMultiplePeers: (peers: LocalPeer[]) => void;
   onOpenSendTextModal: (targetPeers: LocalPeer[]) => void;
@@ -37,6 +40,8 @@ export function LocalWifiRadar({
   peers,
   myPin,
   connectedPin,
+  isConnectingPin,
+  onCancelConnectingPin,
   onSelectPeer,
   onSelectMultiplePeers,
   onOpenSendTextModal,
@@ -306,6 +311,34 @@ export function LocalWifiRadar({
                 Cukup buka tautan ini di HP atau komputer lain yang terhubung ke Wi-Fi yang sama. Perangkat akan <strong>otomatis terhubung di sini</strong> tanpa perlu scan QR!
               </p>
             </div>
+
+            {/* Active Remote Connecting Indicator */}
+            {isConnectingPin && (
+              <div className="p-4 rounded-2xl bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/60 flex items-center justify-between gap-3 text-left animate-in fade-in max-w-sm mx-auto shadow-sm">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      Menghubungkan ke PIN {isConnectingPin}...
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Menegosiasikan WebRTC P2P antar jaringan...
+                    </div>
+                  </div>
+                </div>
+                {onCancelConnectingPin && (
+                  <button
+                    type="button"
+                    onClick={onCancelConnectingPin}
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition-colors shrink-0"
+                  >
+                    Batal
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Quick Action Buttons: Scan Camera (Mobile) or Show QR (Laptop) */}
             <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">

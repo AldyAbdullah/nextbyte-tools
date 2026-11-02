@@ -5,24 +5,23 @@ export async function GET() {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:openrelay.metered.ca:80' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
   ];
+
+  // Support custom TURN server from environment variables (e.g. CoTURN or Metered private domain)
+  const customTurnUrl = process.env.TURN_URL;
+  const customTurnUser = process.env.TURN_USERNAME;
+  const customTurnCred = process.env.TURN_CREDENTIAL;
+
+  if (customTurnUrl) {
+    defaultIceServers.push({
+      urls: customTurnUrl,
+      username: customTurnUser,
+      credential: customTurnCred,
+    });
+  }
 
   const turnApiUrl = process.env.TURN_API_URL;
   const turnApiSecret = process.env.TURN_API_SECRET;

@@ -58,6 +58,8 @@ export function SendStudio() {
 
   // Target PIN if this device is connecting to another device (e.g. from URL ?pin= or scanner)
   const [connectedPin, setConnectedPin] = useState<string | null>(null);
+  const [isConnectingPin, setIsConnectingPin] = useState<string | null>(null);
+  const connectingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   // Local Peer identification
@@ -206,6 +208,11 @@ export function SendStudio() {
     conn.on('open', () => {
       // Auto-close QR code modal when a peer connects
       setShowQrModal(false);
+      setIsConnectingPin(null);
+      if (connectingTimeoutRef.current) {
+        clearTimeout(connectingTimeoutRef.current);
+        connectingTimeoutRef.current = null;
+      }
 
       // Exchange self device info
       if (myPeerRef.current) {
@@ -227,6 +234,11 @@ export function SendStudio() {
       switch (data.type) {
         case 'PEER_INFO': {
           setShowQrModal(false);
+          setIsConnectingPin(null);
+          if (connectingTimeoutRef.current) {
+            clearTimeout(connectingTimeoutRef.current);
+            connectingTimeoutRef.current = null;
+          }
           if (data.peer) {
             const remotePeer: LocalPeer = {
               ...data.peer,
@@ -412,10 +424,12 @@ export function SendStudio() {
     conn.on('close', () => {
       connectionsRef.current.delete(conn.peer);
       setNearbyPeers((prev) => prev.filter((p) => p.id !== conn.peer));
+      setIsConnectingPin((curr) => (curr && `nb_${curr}` === conn.peer ? null : curr));
     });
 
     conn.on('error', (err: unknown) => {
       console.warn('Peer connection error:', err);
+      setIsConnectingPin((curr) => (curr && `nb_${curr}` === conn.peer ? null : curr));
     });
   }, [cleanupTransfer, showToast]);
 
@@ -456,23 +470,10 @@ export function SendStudio() {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun3.l.google.com:19302' },
+              { urls: 'stun:stun4.l.google.com:19302' },
               { urls: 'stun:stun.cloudflare.com:3478' },
-              { urls: 'stun:openrelay.metered.ca:80' },
-              {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject',
-              },
-              {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject',
-              },
-              {
-                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                username: 'openrelayproject',
-                credential: 'openrelayproject',
-              },
             ],
           },
         });
@@ -482,11 +483,6 @@ export function SendStudio() {
         peer.on('open', (id: string) => {
           if (!isMounted) return;
           console.log('[PeerJS] Ready with ID:', id);
-
-          // If URL had a target PIN (from QR scan), connect immediately
-          if (connectedPin) {
-            connectToPeer(`nb_${connectedPin}`);
-          }
         });
 
         peer.on('connection', (conn) => {
@@ -519,7 +515,7 @@ export function SendStudio() {
         peerInstanceRef.current = null;
       }
     };
-  }, [myPin, connectedPin, connectToPeer, setupConnection]);
+  }, [myPin, setupConnection]);
 
   // Sender: Stream files chunk-by-chunk to receiver
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1020,20 +1016,63 @@ export function SendStudio() {
     receivedMetadataRef.current = [];
   };
 
+  // Cancel connecting to target PIN
+  const handleCancelConnectingPin = useCallback(() => {
+    if (connectingTimeoutRef.current) {
+      clearTimeout(connectingTimeoutRef.current);
+      connectingTimeoutRef.current = null;
+    }
+    setIsConnectingPin(null);
+    showToast('Pencarian koneksi dibatalkan.', 'info');
+  }, [showToast]);
+
   // User entered target PIN manually
-  const handleJoinPin = (pin: string) => {
-    setConnectedPin(pin);
-    connectToPeer(`nb_${pin}`);
-    showToast(`Menghubungkan ke PIN: ${pin}`, 'info');
-  };
+  const handleJoinPin = useCallback(
+    (pin: string) => {
+      const cleanPin = pin.trim().toUpperCase();
+      if (!cleanPin) return;
+      setConnectedPin(cleanPin);
+      setIsConnectingPin(cleanPin);
+
+      if (connectingTimeoutRef.current) {
+        clearTimeout(connectingTimeoutRef.current);
+      }
+
+      showToast(`Menghubungkan ke PIN: ${cleanPin}...`, 'info');
+      connectToPeer(`nb_${cleanPin}`);
+
+      // 15 seconds timeout
+      connectingTimeoutRef.current = setTimeout(() => {
+        setIsConnectingPin((curr) => {
+          if (curr === cleanPin) {
+            showToast(
+              `Koneksi ke PIN ${cleanPin} memakan waktu terlalu lama. Hal ini umumnya terjadi karena firewall operator seluler (CGNAT). Hubungkan ke Wi-Fi yang sama untuk kecepatan maksimal, atau gunakan Nextbyte Clipboard.`,
+              'error'
+            );
+            return null;
+          }
+          return curr;
+        });
+      }, 15000);
+    },
+    [connectToPeer, showToast]
+  );
 
   // User scanned QR code with in-browser camera
-  const handleCameraScanSuccess = (scannedPin: string) => {
-    setShowCameraScanner(false);
-    setConnectedPin(scannedPin);
-    connectToPeer(`nb_${scannedPin}`);
-    showToast(`QR Code Terdeteksi! Menghubungkan ke PIN: ${scannedPin}`, 'success');
-  };
+  const handleCameraScanSuccess = useCallback(
+    (scannedPin: string) => {
+      setShowCameraScanner(false);
+      handleJoinPin(scannedPin);
+    },
+    [handleJoinPin]
+  );
+
+  // Auto connect when URL has pin parameter
+  useEffect(() => {
+    if (connectedPin && peerInstanceRef.current && !peerInstanceRef.current.destroyed) {
+      handleJoinPin(connectedPin);
+    }
+  }, [connectedPin, handleJoinPin]);
 
   // Tautan pairing selalu mengacu ke PIN milik perangkat INI
   const pairUrl = typeof window !== 'undefined'
@@ -1126,6 +1165,8 @@ export function SendStudio() {
           peers={nearbyPeers}
           myPin={myPin}
           connectedPin={connectedPin}
+          isConnectingPin={isConnectingPin}
+          onCancelConnectingPin={handleCancelConnectingPin}
           onSelectPeer={handleSelectPeerToTarget}
           onSelectMultiplePeers={handleSelectMultiplePeersToTarget}
           onOpenSendTextModal={handleOpenSendTextModal}
