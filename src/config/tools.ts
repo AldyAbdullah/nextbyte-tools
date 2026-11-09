@@ -86,6 +86,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['caption', 'word', 'gambar', 'tabel', 'daftar gambar', 'daftar tabel', 'docx', 'skripsi', 'seq', 'toc']
   },
   {
+    id: 'pdf-editor',
+    name: 'PDF Editor & OCR',
+    slug: 'pdf-editor',
+    description: 'Edit PDF langsung di web: ubah teks/nama, bubuhkan tanda tangan digital & stempel, redaksi whiteout, serta OCR per halaman yang super ringan dan hemat memori.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'FileEdit',
+    featured: true,
+    badge: 'Baru',
+    tags: ['pdf', 'editor', 'ocr', 'ganti nama', 'edit teks', 'tanda tangan', 'signature', 'whiteout', 'redact']
+  },
+  {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',

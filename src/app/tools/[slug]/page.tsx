@@ -55,7 +55,7 @@ interface ToolPageProps {
 
 export function generateStaticParams() {
   return TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive', 'clipboard', 'clip'].includes(tool.slug)
+    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive', 'clipboard', 'clip', 'pdf-editor'].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
   }));
@@ -77,6 +77,9 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   const { slug } = await params;
 
   // Redirect ke halaman khusus tool yang tersedia
+  if (slug === 'pdf-editor') {
+    redirect('/tools/pdf-editor');
+  }
   if (slug === 'qr-code-generator') {
     redirect('/tools/qr-code-generator');
   }

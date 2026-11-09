@@ -14,6 +14,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     {
+      url: `${baseUrl}/tools/pdf-editor`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
       url: `${baseUrl}/tools/qr-code-generator`,
       lastModified: currentDate,
       changeFrequency: 'daily',
@@ -89,7 +95,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   // Halaman Alat Lainnya
   const toolPages: MetadataRoute.Sitemap = TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive'].includes(tool.slug)
+    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive', 'pdf-editor'].includes(tool.slug)
   ).map((tool) => ({
     url: `${baseUrl}/tools/${tool.slug}`,
     lastModified: currentDate,

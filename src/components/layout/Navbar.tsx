@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Layers,
   Clipboard,
+  FileEdit,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { SearchModal } from '@/components/common/SearchModal';
@@ -48,6 +49,15 @@ const TOOL_CATEGORIES: NavCategory[] = [
   {
     title: 'DOCUMENT TOOLS',
     items: [
+      {
+        name: 'PDF Editor & OCR',
+        href: '/tools/pdf-editor',
+        desc: 'Edit teks, tanda tangan & OCR per halaman',
+        icon: FileEdit,
+        badge: 'Baru',
+        iconColor: 'text-violet-600 dark:text-violet-400',
+        iconBg: 'bg-violet-50 dark:bg-violet-950/60',
+      },
       {
         name: 'Word Mail Merge',
         href: '/tools/mail-merge',
