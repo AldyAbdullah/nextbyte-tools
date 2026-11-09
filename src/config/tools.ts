@@ -98,6 +98,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['pdf', 'editor', 'ocr', 'ganti nama', 'edit teks', 'tanda tangan', 'signature', 'whiteout', 'redact']
   },
   {
+    id: 'merge-pdf',
+    name: 'Gabung PDF (Merge PDF)',
+    slug: 'merge-pdf',
+    description: 'Satukan beberapa file PDF jadi satu dokumen secara online, cepat, dan 100% privat langsung di browser tanpa batas ukuran dan tanpa antrean.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Layers',
+    featured: true,
+    badge: 'Baru',
+    tags: ['pdf', 'gabung pdf', 'merge pdf', 'combine pdf', 'satukan pdf', 'ijazah', 'cv', 'ktp', 'berkas']
+  },
+  {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',
