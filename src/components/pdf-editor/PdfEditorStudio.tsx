@@ -80,8 +80,11 @@ export function PdfEditorStudio() {
   // Document state
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
+  const [docId, setDocId] = useState<string>('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pdfJsDocRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const currentRenderTaskRef = useRef<any>(null);
   const [pageCount, setPageCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [zoom, setZoom] = useState<number>(1.25);
@@ -143,6 +146,9 @@ export function PdfEditorStudio() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset input so selecting the same file again still fires onChange
+    e.target.value = '';
+
     if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
       showToast('Silakan pilih file berekstensi PDF.', 'error');
       return;
@@ -151,18 +157,30 @@ export function PdfEditorStudio() {
     try {
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
+      const newDocId = `${file.name}_${file.size}_${file.lastModified}_${Date.now()}`;
+
       setPdfFile(file);
       setPdfBytes(bytes);
+      setDocId(newDocId);
       setAnnotations([]);
       setHistory([]);
       setRedoStack([]);
       setDeletedPages([]);
       setRotations({});
       setOcrBoxes({});
+      setOcrType({});
       setThumbnailUrls({});
       setCurrentPage(0);
       setActiveTool('pan');
       setSelectedAnnotationId(null);
+
+      // Cancel previous active render task if any
+      if (currentRenderTaskRef.current) {
+        try {
+          currentRenderTaskRef.current.cancel();
+        } catch {}
+        currentRenderTaskRef.current = null;
+      }
 
       // Initialize PDF.js via client loader
       const pdfjs = await getPdfJsLib();
@@ -181,7 +199,7 @@ export function PdfEditorStudio() {
 
   // 2. Render Active Page onto HTML5 Canvas & Extract Digital Text
   const renderCurrentPage = useCallback(async () => {
-    if (!pdfJsDocRef.current || pageCount === 0) return;
+    if (!pdfJsDocRef.current || pageCount === 0 || !docId) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -207,12 +225,21 @@ export function PdfEditorStudio() {
       if (!ctx) return;
       ctx.scale(dpr, dpr);
 
+      // Cancel previous active render task if any to prevent canvas collision
+      if (currentRenderTaskRef.current) {
+        try {
+          currentRenderTaskRef.current.cancel();
+        } catch {}
+      }
+
       const renderContext = {
         canvasContext: ctx,
         viewport,
       };
 
-      await page.render(renderContext).promise;
+      const renderTask = page.render(renderContext);
+      currentRenderTaskRef.current = renderTask;
+      await renderTask.promise;
 
       // Extract digital text items automatically if not already extracted
       if (!ocrBoxes[currentPage]) {
@@ -279,32 +306,38 @@ export function PdfEditorStudio() {
     } catch (err) {
       console.warn('Render error:', err);
     }
-  }, [currentPage, pageCount, zoom, rotations, ocrBoxes]);
+  }, [docId, currentPage, pageCount, zoom, rotations, ocrBoxes]);
 
   useEffect(() => {
     renderCurrentPage();
   }, [renderCurrentPage]);
 
-  // 3. Render Thumbnails for Sidebar
+  // 3. Render Thumbnails for Sidebar (synchronized with docId and rotations)
   useEffect(() => {
-    if (!pdfJsDocRef.current || pageCount === 0) return;
+    if (!pdfJsDocRef.current || pageCount === 0 || !docId) return;
     let isCancelled = false;
+
+    // Immediately clear stale thumbnails when switching file or rotating
+    setThumbnailUrls({});
 
     async function loadThumbnails() {
       const doc = pdfJsDocRef.current;
+      if (!doc) return;
       const newThumbs: Record<number, string> = {};
 
       for (let i = 0; i < doc.numPages; i++) {
         if (isCancelled) return;
         try {
           const page = await doc.getPage(i + 1);
-          const vp = page.getViewport({ scale: 0.25 });
+          const rotationAngle = rotations[i] || 0;
+          const vp = page.getViewport({ scale: 0.25, rotation: rotationAngle });
           const thumbCanvas = document.createElement('canvas');
           thumbCanvas.width = vp.width;
           thumbCanvas.height = vp.height;
           const ctx = thumbCanvas.getContext('2d');
           if (ctx) {
             await page.render({ canvasContext: ctx, viewport: vp }).promise;
+            if (isCancelled) return;
             newThumbs[i] = thumbCanvas.toDataURL('image/jpeg', 0.7);
           }
         } catch {}
@@ -319,7 +352,7 @@ export function PdfEditorStudio() {
     return () => {
       isCancelled = true;
     };
-  }, [pageCount, rotations]);
+  }, [docId, pageCount, rotations]);
 
   // 4. On-Demand OCR Trigger (Per-page Server-Side OCR)
   const handleRunPageOcr = async () => {
@@ -636,7 +669,18 @@ export function PdfEditorStudio() {
       showToast('Dokumen harus memiliki minimal 1 halaman.', 'error');
       return;
     }
-    setDeletedPages((prev) => [...prev, pIdx]);
+    setDeletedPages((prev) => {
+      const nextDeleted = [...prev, pIdx];
+      if (currentPage === pIdx) {
+        for (let i = 0; i < pageCount; i++) {
+          if (!nextDeleted.includes(i)) {
+            setCurrentPage(i);
+            break;
+          }
+        }
+      }
+      return nextDeleted;
+    });
     showToast(`Halaman ${pIdx + 1} dihapus dari dokumen hasil.`, 'info');
   };
 
