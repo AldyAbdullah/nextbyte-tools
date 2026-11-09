@@ -23,11 +23,17 @@ import {
   FileEdit,
   Move,
   X,
+  Stamp,
+  ShieldAlert,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useToast } from '@/components/common/Toast';
 import { SignatureModal } from './SignatureModal';
 import { ReplaceTextModal } from './ReplaceTextModal';
+import { StampModal } from './StampModal';
+import { WatermarkModal, WatermarkConfig } from './WatermarkModal';
 import {
   PdfAnnotationItem,
   applyPdfModifications,
@@ -130,6 +136,10 @@ export function PdfEditorStudio() {
   // Modals
   const [signatureModalOpen, setSignatureModalOpen] = useState(false);
   const [replaceModalOpen, setReplaceModalOpen] = useState(false);
+  const [stampModalOpen, setStampModalOpen] = useState(false);
+  const [watermarkModalOpen, setWatermarkModalOpen] = useState(false);
+  const [watermark, setWatermark] = useState<WatermarkConfig | null>(null);
+  const [pageOrder, setPageOrder] = useState<number[]>([]);
   const [selectedOcrBox, setSelectedOcrBox] = useState<OcrBoxItem | null>(null);
 
   // Canvas Viewport references
@@ -189,6 +199,8 @@ export function PdfEditorStudio() {
       const doc = await loadingTask.promise;
       pdfJsDocRef.current = doc;
       setPageCount(doc.numPages);
+      setPageOrder(Array.from({ length: doc.numPages }, (_, i) => i));
+      setWatermark(null);
 
       showToast(`Dokumen "${file.name}" berhasil dimuat!`, 'success');
     } catch (err) {
@@ -654,6 +666,43 @@ export function PdfEditorStudio() {
     showToast('Tanda tangan disematkan! Klik & geser posisinya, atau tarik sudutnya untuk mengubah ukuran.', 'success');
   };
 
+  // Apply Stamp / Image from Modal
+  const handleApplyStamp = (imageDataUrl: string, width: number, height: number) => {
+    const x = Math.max(20, Math.round((pageDimensions.width - width) / 2));
+    const y = Math.max(20, Math.round((pageDimensions.height - height) / 2));
+
+    const newAnn: PdfAnnotationItem = {
+      id: `stamp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      pageIndex: currentPage,
+      type: 'stamp',
+      x,
+      y,
+      width,
+      height,
+      imageDataUrl,
+    };
+    addAnnotation(newAnn);
+    setSelectedAnnotationId(newAnn.id);
+    setActiveTool('pan');
+    showToast('Stempel / gambar disematkan! Klik & geser posisinya, atau tarik sudut untuk resize.', 'success');
+  };
+
+  // Reorder Pages
+  const handleMovePage = (displayIndex: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? displayIndex - 1 : displayIndex + 1;
+    if (targetIndex < 0 || targetIndex >= pageOrder.length) return;
+
+    setPageOrder((prev) => {
+      const next = [...prev];
+      const temp = next[displayIndex];
+      next[displayIndex] = next[targetIndex];
+      next[targetIndex] = temp;
+      return next;
+    });
+
+    showToast(`Urutan halaman berhasil dipindahkan!`, 'info');
+  };
+
   // Rotate Page
   const handleRotatePage = (pIdx: number) => {
     setRotations((prev) => {
@@ -694,7 +743,9 @@ export function PdfEditorStudio() {
         pdfBytes,
         annotations,
         deletedPages,
-        rotations
+        rotations,
+        pageOrder,
+        watermark
       );
 
       const blob = new Blob([modifiedBytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' });
@@ -751,6 +802,26 @@ export function PdfEditorStudio() {
         onApplyReplace={(ann) => {
           addAnnotation(ann);
           showToast('Teks berhasil diganti & ditutupi whiteout!', 'success');
+        }}
+      />
+
+      <StampModal
+        isOpen={stampModalOpen}
+        onClose={() => setStampModalOpen(false)}
+        onApplyStamp={handleApplyStamp}
+      />
+
+      <WatermarkModal
+        isOpen={watermarkModalOpen}
+        onClose={() => setWatermarkModalOpen(false)}
+        currentWatermark={watermark}
+        onApplyWatermark={(wm) => {
+          setWatermark(wm);
+          if (wm) {
+            showToast(`Watermark "${wm.text}" diterapkan ke semua halaman!`, 'success');
+          } else {
+            showToast('Watermark dihapus.', 'info');
+          }
         }}
       />
 
@@ -852,10 +923,12 @@ export function PdfEditorStudio() {
                 { id: 'add_text', label: 'Tambah Teks', icon: Type },
                 { id: 'whiteout', label: 'Whiteout / Tutup', icon: Eraser },
                 { id: 'signature', label: 'Tanda Tangan', icon: PenTool },
+                { id: 'stamp', label: 'Stempel & Gambar', icon: Stamp },
+                { id: 'watermark', label: 'Watermark', icon: ShieldAlert },
                 { id: 'highlight', label: 'Sorot (Highlight)', icon: Highlighter },
               ].map((tool) => {
                 const Icon = tool.icon;
-                const isActive = activeTool === tool.id;
+                const isActive = activeTool === tool.id || (tool.id === 'watermark' && !!watermark);
                 return (
                   <button
                     key={tool.id}
@@ -863,6 +936,10 @@ export function PdfEditorStudio() {
                     onClick={() => {
                       if (tool.id === 'signature') {
                         setSignatureModalOpen(true);
+                      } else if (tool.id === 'stamp') {
+                        setStampModalOpen(true);
+                      } else if (tool.id === 'watermark') {
+                        setWatermarkModalOpen(true);
                       } else {
                         setActiveTool(tool.id as typeof activeTool);
                       }
@@ -875,6 +952,9 @@ export function PdfEditorStudio() {
                   >
                     <Icon className="w-3.5 h-3.5" />
                     <span>{tool.label}</span>
+                    {tool.id === 'watermark' && watermark && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    )}
                   </button>
                 );
               })}
@@ -931,6 +1011,8 @@ export function PdfEditorStudio() {
                     ? 'Teks Terpilih (Klik & Geser di Halaman):'
                     : selectedAnnotation.type === 'signature'
                     ? 'Tanda Tangan Terpilih (Geser atau Tarik Sudut):'
+                    : selectedAnnotation.type === 'stamp' || selectedAnnotation.type === 'image'
+                    ? 'Stempel / Gambar Terpilih (Geser atau Tarik Sudut):'
                     : 'Elemen Terpilih:'}
                 </span>
               </div>
@@ -1047,72 +1129,102 @@ export function PdfEditorStudio() {
                 </div>
 
                 <div className="space-y-2.5">
-                  {Array.from({ length: pageCount }).map((_, idx) => {
-                    if (deletedPages.includes(idx)) return null;
-                    const isActive = currentPage === idx;
-                    const thumbUrl = thumbnailUrls[idx];
+                  {(pageOrder.length > 0 ? pageOrder : Array.from({ length: pageCount }, (_, i) => i)).map(
+                    (pageIdx, displayPos) => {
+                      if (deletedPages.includes(pageIdx)) return null;
+                      const isActive = currentPage === pageIdx;
+                      const thumbUrl = thumbnailUrls[pageIdx];
 
-                    return (
-                      <div
-                        key={idx}
-                        onClick={() => {
-                          setCurrentPage(idx);
-                          setSelectedAnnotationId(null);
-                        }}
-                        className={`p-2 rounded-2xl border transition-all cursor-pointer relative group ${
-                          isActive
-                            ? 'border-blue-600 bg-blue-50/40 dark:bg-blue-950/40 shadow-md ring-1 ring-blue-500'
-                            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 bg-slate-50/50 dark:bg-slate-950'
-                        }`}
-                      >
-                        {/* Page Preview Thumbnail */}
-                        <div className="aspect-[1/1.414] bg-white rounded-lg border border-slate-100 dark:border-slate-800 overflow-hidden flex items-center justify-center">
-                          {thumbUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={thumbUrl}
-                              alt={`Thumbnail Hal ${idx + 1}`}
-                              className="w-full h-full object-contain"
-                            />
-                          ) : (
-                            <FileText className="w-6 h-6 text-slate-300 animate-pulse" />
-                          )}
-                        </div>
+                      return (
+                        <div
+                          key={pageIdx}
+                          onClick={() => {
+                            setCurrentPage(pageIdx);
+                            setSelectedAnnotationId(null);
+                          }}
+                          className={`p-2 rounded-2xl border transition-all cursor-pointer relative group ${
+                            isActive
+                              ? 'border-blue-600 bg-blue-50/40 dark:bg-blue-950/40 shadow-md ring-1 ring-blue-500'
+                              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 bg-slate-50/50 dark:bg-slate-950'
+                          }`}
+                        >
+                          {/* Page Preview Thumbnail */}
+                          <div className="aspect-[1/1.414] bg-white rounded-lg border border-slate-100 dark:border-slate-800 overflow-hidden flex items-center justify-center">
+                            {thumbUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={thumbUrl}
+                                alt={`Thumbnail Hal ${pageIdx + 1}`}
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <FileText className="w-6 h-6 text-slate-300 animate-pulse" />
+                            )}
+                          </div>
 
-                        {/* Page Footer & Actions */}
-                        <div className="flex items-center justify-between pt-1.5 px-0.5">
-                          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                            Hal {idx + 1}
-                          </span>
+                          {/* Page Footer & Actions */}
+                          <div className="flex items-center justify-between pt-1.5 px-0.5">
+                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                              Hal {pageIdx + 1}
+                            </span>
 
-                          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRotatePage(idx);
-                              }}
-                              title="Putar 90°"
-                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                            >
-                              <RotateCw className="w-3 h-3" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeletePage(idx);
-                              }}
-                              title="Hapus Halaman"
-                              className="p-1 hover:bg-red-50 dark:hover:bg-red-950/60 rounded-md text-slate-400 hover:text-red-500"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                            <div className="flex items-center gap-0.5 opacity-90 group-hover:opacity-100">
+                              {/* Reorder Up */}
+                              {displayPos > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMovePage(displayPos, 'up');
+                                  }}
+                                  title="Pindah ke Atas"
+                                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </button>
+                              )}
+                              {/* Reorder Down */}
+                              {displayPos < pageOrder.length - 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMovePage(displayPos, 'down');
+                                  }}
+                                  title="Pindah ke Bawah"
+                                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRotatePage(pageIdx);
+                                }}
+                                title="Putar 90°"
+                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                              >
+                                <RotateCw className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePage(pageIdx);
+                                }}
+                                title="Hapus Halaman"
+                                className="p-1 hover:bg-red-50 dark:hover:bg-red-950/60 rounded-md text-slate-400 hover:text-red-500"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    }
+                  )}
                 </div>
               </div>
             )}
@@ -1303,7 +1415,7 @@ export function PdfEditorStudio() {
                         );
                       }
 
-                      if (ann.type === 'signature' && ann.imageDataUrl) {
+                      if ((ann.type === 'signature' || ann.type === 'stamp' || ann.type === 'image') && ann.imageDataUrl) {
                         return (
                           <g
                             key={ann.id}
@@ -1316,6 +1428,7 @@ export function PdfEditorStudio() {
                               y={ann.y}
                               width={ann.width}
                               height={ann.height}
+                              opacity={ann.opacity ?? 1}
                               preserveAspectRatio="xMidYMid meet"
                             />
                             {/* Selection border */}
@@ -1362,6 +1475,25 @@ export function PdfEditorStudio() {
 
                       return null;
                     })}
+
+                  {/* Real-time Watermark Preview */}
+                  {watermark && watermark.text && (
+                    <text
+                      x={pageDimensions.width / 2}
+                      y={pageDimensions.height / 2}
+                      fill={watermark.color || '#94a3b8'}
+                      opacity={watermark.opacity || 0.2}
+                      fontSize={Math.max(24, Math.round(Math.min(pageDimensions.width, pageDimensions.height) * 0.08))}
+                      fontFamily="Helvetica, Arial, sans-serif"
+                      fontWeight="900"
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      transform={`rotate(-${watermark.rotation ?? 45}, ${pageDimensions.width / 2}, ${pageDimensions.height / 2})`}
+                      className="select-none pointer-events-none tracking-widest uppercase font-black"
+                    >
+                      {watermark.text}
+                    </text>
+                  )}
 
                   {/* OCR Word & Line Bounding Boxes (visible in 'ocr_replace' mode) */}
                   {activeTool === 'ocr_replace' &&
