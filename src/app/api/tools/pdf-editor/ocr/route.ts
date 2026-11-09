@@ -1,95 +1,106 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
+import { createWorker } from 'tesseract.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  let tempFilePath: string | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let worker: any = null;
 
   try {
     const formData = await req.formData();
-    const file = formData.get('file') as File | null;
-    const pageIndexStr = formData.get('pageIndex') as string | null;
-    const pageIndex = pageIndexStr ? parseInt(pageIndexStr, 10) : 0;
+    const imageFile = formData.get('image') as File | null;
+    const pageWidthStr = formData.get('pageWidth') as string | null;
+    const pageHeightStr = formData.get('pageHeight') as string | null;
+    const canvasWidthStr = formData.get('canvasWidth') as string | null;
+    const canvasHeightStr = formData.get('canvasHeight') as string | null;
+    const lang = (formData.get('lang') as string | null) || 'ind+eng';
+    const pageIndex = parseInt((formData.get('pageIndex') as string) || '0', 10);
 
-    if (!file) {
-      return NextResponse.json({ error: 'Tidak ada file PDF yang diunggah.' }, { status: 400 });
+    if (!imageFile) {
+      return NextResponse.json({ error: 'Gambar halaman tidak ditemukan untuk OCR.' }, { status: 400 });
     }
 
-    // Limit single file size to 50MB
-    if (file.size > 50 * 1024 * 1024) {
-      return NextResponse.json({ error: 'Ukuran file PDF maksimal 50MB.' }, { status: 400 });
+    const pageWidth = pageWidthStr ? parseFloat(pageWidthStr) : 0;
+    const pageHeight = pageHeightStr ? parseFloat(pageHeightStr) : 0;
+    const canvasWidth = canvasWidthStr ? parseFloat(canvasWidthStr) : 0;
+    const canvasHeight = canvasHeightStr ? parseFloat(canvasHeightStr) : 0;
+
+    const scaleX = pageWidth > 0 && canvasWidth > 0 ? canvasWidth / pageWidth : 1;
+    const scaleY = pageHeight > 0 && canvasHeight > 0 ? canvasHeight / pageHeight : 1;
+
+    const arrayBuffer = await imageFile.arrayBuffer();
+    const imageBuffer = Buffer.from(arrayBuffer);
+
+    // Locate tessdata path (check public/tessdata first, then src/scripts/tessdata)
+    let tessdataPath = path.join(process.cwd(), 'public', 'tessdata');
+    if (!fs.existsSync(path.join(tessdataPath, 'eng.traineddata'))) {
+      tessdataPath = path.join(process.cwd(), 'src', 'scripts', 'tessdata');
     }
 
-    // Write buffer to temporary file
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const tempFileName = `nextbyte_pdf_ocr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.pdf`;
-    tempFilePath = path.join(os.tmpdir(), tempFileName);
-    await fs.promises.writeFile(tempFilePath, buffer);
-
-    const scriptPath = path.join(process.cwd(), 'src', 'scripts', 'page_ocr.py');
-    const tessdataPath = path.join(process.cwd(), 'src', 'scripts', 'tessdata');
-
-    // Run Python OCR script strictly for this single page
-    const pythonResult = await new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
-      const child = spawn('python', [scriptPath, tempFilePath!, pageIndex.toString(), tessdataPath], {
-        timeout: 25000, // 25s timeout
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      child.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      child.on('close', (code) => {
-        resolve({ stdout, stderr, code: code ?? 1 });
-      });
-
-      child.on('error', (err) => {
-        resolve({ stdout, stderr: err.message, code: 1 });
-      });
+    // Initialize Server-Side OCR Worker
+    worker = await createWorker(lang, 1, {
+      langPath: tessdataPath,
+      cachePath: tessdataPath,
+      cacheMethod: 'readOnly',
+      gzip: false,
     });
 
-    if (pythonResult.code !== 0 && !pythonResult.stdout) {
-      console.error('Python OCR error:', pythonResult.stderr);
-      return NextResponse.json(
-        { error: 'Gagal menjalankan pemindaian OCR pada halaman ini.', details: pythonResult.stderr },
-        { status: 500 }
-      );
+    const ret = await worker.recognize(imageBuffer, {}, { blocks: true });
+
+    const lines: Array<{
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+      text: string;
+      fontsize: number;
+    }> = [];
+
+    // Extract line bounding boxes from layout blocks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const block of (ret.data as any).blocks || []) {
+      for (const para of block.paragraphs || []) {
+        for (const line of para.lines || []) {
+          const text = line.text?.trim();
+          if (text) {
+            const x0 = Math.round(line.bbox.x0 / scaleX);
+            const y0 = Math.round(line.bbox.y0 / scaleY);
+            const x1 = Math.round(line.bbox.x1 / scaleX);
+            const y1 = Math.round(line.bbox.y1 / scaleY);
+            const fontsize = Math.max(9, Math.round((y1 - y0) * 0.8));
+
+            lines.push({
+              x0,
+              y0,
+              x1,
+              y1,
+              text,
+              fontsize,
+            });
+          }
+        }
+      }
     }
 
-    try {
-      const parsed = JSON.parse(pythonResult.stdout.trim());
-      if (parsed.error) {
-        return NextResponse.json({ error: parsed.error }, { status: 400 });
-      }
-      return NextResponse.json(parsed);
-    } catch {
-      return NextResponse.json(
-        { error: 'Format data OCR tidak valid dari mesin Python.', raw: pythonResult.stdout },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json({
+      page_index: pageIndex,
+      count: lines.length,
+      lines,
+    });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Terjadi kesalahan server.';
+    console.error('Server OCR error:', err);
+    const message = err instanceof Error ? err.message : 'Gagal memproses OCR pada server.';
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
-    if (tempFilePath && fs.existsSync(tempFilePath)) {
+    if (worker) {
       try {
-        await fs.promises.unlink(tempFilePath);
-      } catch (cleanErr) {
-        console.warn('Failed to delete temp file:', cleanErr);
+        await worker.terminate();
+      } catch (termErr) {
+        console.warn('OCR worker terminate error:', termErr);
       }
     }
   }

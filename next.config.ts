@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
-  serverExternalPackages: ['pdfjs-dist'],
+  serverExternalPackages: ['pdfjs-dist', 'tesseract.js'],
 };
 
 export default nextConfig;

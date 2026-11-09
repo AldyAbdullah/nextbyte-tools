@@ -21,6 +21,8 @@ import {
   ChevronRight,
   RefreshCw,
   FileEdit,
+  Move,
+  X,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useToast } from '@/components/common/Toast';
@@ -104,6 +106,19 @@ export function PdfEditorStudio() {
   const [history, setHistory] = useState<PdfAnnotationItem[][]>([]);
   const [redoStack, setRedoStack] = useState<PdfAnnotationItem[][]>([]);
 
+  // Selected annotation (for dragging, resizing, or editing)
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [isDraggingAnnotation, setIsDraggingAnnotation] = useState(false);
+  const [isResizingSignature, setIsResizingSignature] = useState(false);
+  const [dragStartInfo, setDragStartInfo] = useState<{
+    pointerX: number;
+    pointerY: number;
+    annX: number;
+    annY: number;
+    annWidth: number;
+    annHeight: number;
+  } | null>(null);
+
   // OCR state per-page
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrBoxes, setOcrBoxes] = useState<Record<number, OcrBoxItem[]>>({});
@@ -118,7 +133,7 @@ export function PdfEditorStudio() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportContainerRef = useRef<HTMLDivElement>(null);
 
-  // Selection / Drag state
+  // Selection / Drag state for drawing whiteout/highlight rects
   const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [rectStart, setRectStart] = useState<{ x: number; y: number } | null>(null);
   const [currentRect, setCurrentRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -147,6 +162,7 @@ export function PdfEditorStudio() {
       setThumbnailUrls({});
       setCurrentPage(0);
       setActiveTool('pan');
+      setSelectedAnnotationId(null);
 
       // Initialize PDF.js via client loader
       const pdfjs = await getPdfJsLib();
@@ -163,7 +179,7 @@ export function PdfEditorStudio() {
     }
   };
 
-  // 2. Render Active Page onto HTML5 Canvas
+  // 2. Render Active Page onto HTML5 Canvas & Extract Digital Text
   const renderCurrentPage = useCallback(async () => {
     if (!pdfJsDocRef.current || pageCount === 0) return;
     const canvas = canvasRef.current;
@@ -203,7 +219,7 @@ export function PdfEditorStudio() {
         try {
           const textContent = await page.getTextContent();
           if (textContent.items && textContent.items.length > 0) {
-            const digitalBoxes: OcrBoxItem[] = [];
+            const rawBoxes: OcrBoxItem[] = [];
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             textContent.items.forEach((item: any) => {
               if (item.str && item.str.trim()) {
@@ -211,27 +227,54 @@ export function PdfEditorStudio() {
                 const ty = item.transform[5];
                 const w = item.width;
                 const h = item.height || Math.abs(item.transform[0]);
-                // Convert PDF bottom-left origin to top-left origin
                 const origHeight = viewport.height / zoom;
                 const x0 = tx;
                 const y0 = origHeight - ty - h;
-                digitalBoxes.push({
+                rawBoxes.push({
                   x0: Math.round(x0),
                   y0: Math.round(y0),
                   x1: Math.round(x0 + w),
                   y1: Math.round(y0 + h),
-                  text: item.str,
+                  text: item.str.trim(),
                   fontsize: Math.round(h * 0.85),
                 });
               }
             });
 
-            if (digitalBoxes.length > 5) {
-              setOcrBoxes((prev) => ({ ...prev, [currentPage]: digitalBoxes }));
+            if (rawBoxes.length > 0) {
+              // Group adjacent words on the same line
+              const sorted = [...rawBoxes].sort((a, b) => {
+                if (Math.abs(a.y0 - b.y0) > 5) return a.y0 - b.y0;
+                return a.x0 - b.x0;
+              });
+
+              const groupedLines: OcrBoxItem[] = [];
+              for (const box of sorted) {
+                const last = groupedLines[groupedLines.length - 1];
+                if (
+                  last &&
+                  Math.abs(last.y0 - box.y0) <= 6 &&
+                  box.x0 - last.x1 < 25 &&
+                  box.x0 >= last.x1 - 5
+                ) {
+                  last.x1 = Math.max(last.x1, box.x1);
+                  last.y1 = Math.max(last.y1, box.y1);
+                  last.text = `${last.text} ${box.text}`;
+                } else {
+                  groupedLines.push({ ...box });
+                }
+              }
+
+              setOcrBoxes((prev) => ({
+                ...prev,
+                [currentPage]: groupedLines.length > 0 ? groupedLines : rawBoxes,
+              }));
               setOcrType((prev) => ({ ...prev, [currentPage]: 'digital' }));
             }
           }
-        } catch {}
+        } catch (extractErr) {
+          console.warn('Text extraction warning:', extractErr);
+        }
       }
     } catch (err) {
       console.warn('Render error:', err);
@@ -278,39 +321,62 @@ export function PdfEditorStudio() {
     };
   }, [pageCount, rotations]);
 
-  // 4. On-Demand Single-Page OCR Trigger
+  // 4. On-Demand OCR Trigger (Per-page Server-Side OCR)
   const handleRunPageOcr = async () => {
-    if (!pdfFile) return;
+    // A. If digital text already exists on this page, activate text selection immediately
+    if (ocrBoxes[currentPage] && ocrBoxes[currentPage].length > 0) {
+      setActiveTool('ocr_replace');
+      showToast(
+        `Teks digital sudah terdeteksi (${ocrBoxes[currentPage].length} baris). Klik kotak teks untuk mengedit!`,
+        'success'
+      );
+      return;
+    }
+
+    // B. If scanned image, run lightweight Server-Side OCR strictly for this single page
     setOcrLoading(true);
-    showToast(`Memindai OCR teks pada Halaman ${currentPage + 1}...`, 'info');
+    showToast(`Memindai OCR teks pada Halaman ${currentPage + 1} di server...`, 'info');
 
     try {
-      const formData = new FormData();
-      formData.append('file', pdfFile);
-      formData.append('pageIndex', currentPage.toString());
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error('Canvas halaman belum siap.');
+
+      // Convert current page canvas to compressed JPEG blob (~150KB)
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/jpeg', 0.85)
+      );
+      if (!blob) throw new Error('Gagal mengekspor gambar halaman.');
+
+      const fd = new FormData();
+      fd.append('image', blob, 'page.jpg');
+      fd.append('pageIndex', currentPage.toString());
+      fd.append('pageWidth', pageDimensions.width.toString());
+      fd.append('pageHeight', pageDimensions.height.toString());
+      fd.append('canvasWidth', canvas.width.toString());
+      fd.append('canvasHeight', canvas.height.toString());
+      fd.append('lang', 'ind+eng');
 
       const res = await fetch('/api/tools/pdf-editor/ocr', {
         method: 'POST',
-        body: formData,
+        body: fd,
       });
 
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Gagal memindai OCR');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server OCR gagal (status ${res.status})`);
       }
 
       const data = await res.json();
-      const lines: OcrBoxItem[] = data.lines || [];
-
-      if (lines.length > 0) {
-        setOcrBoxes((prev) => ({ ...prev, [currentPage]: lines }));
-        setOcrType((prev) => ({ ...prev, [currentPage]: data.is_scanned ? 'scanned' : 'digital' }));
+      if (data.lines && data.lines.length > 0) {
+        setOcrBoxes((prev) => ({ ...prev, [currentPage]: data.lines }));
+        setOcrType((prev) => ({ ...prev, [currentPage]: 'scanned' }));
+        setActiveTool('ocr_replace');
         showToast(
-          `OCR Selesai! Terdeteksi ${lines.length} baris teks pada halaman ${currentPage + 1}.`,
+          `OCR Selesai! Terdeteksi ${data.lines.length} baris teks. Klik kotak teks untuk mengedit.`,
           'success'
         );
       } else {
-        showToast('Tidak ada teks terdeteksi pada halaman ini.', 'info');
+        showToast('Tidak ada teks terdeteksi pada halaman scan ini.', 'info');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Terjadi kendala OCR';
@@ -325,6 +391,7 @@ export function PdfEditorStudio() {
     setHistory((prev) => [...prev, annotations]);
     setRedoStack([]);
     setAnnotations((prev) => [...prev, ann]);
+    setSelectedAnnotationId(ann.id);
   };
 
   const handleUndo = () => {
@@ -343,32 +410,47 @@ export function PdfEditorStudio() {
     setRedoStack((prev) => prev.slice(0, prev.length - 1));
   };
 
-  // Canvas Mouse / Touch events for drawing rectangles (Whiteout & Highlight)
+  const handleDeleteAnnotation = (id: string) => {
+    setHistory((prev) => [...prev, annotations]);
+    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+    if (selectedAnnotationId === id) {
+      setSelectedAnnotationId(null);
+    }
+    showToast('Elemen berhasil dihapus.', 'info');
+  };
+
+  // Canvas Mouse / Pointer events for creating Whiteout, Highlight, or Text
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool === 'pan') return;
+    // If clicking on empty canvas space, deselect active annotation
+    if (activeTool === 'pan') {
+      setSelectedAnnotationId(null);
+      return;
+    }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - rect.left) / zoom;
     const y = (e.clientY - rect.top) / zoom;
 
     if (activeTool === 'add_text') {
-      const defaultText = prompt('Masukkan teks yang ingin ditambahkan:');
-      if (defaultText && defaultText.trim()) {
-        addAnnotation({
-          id: `text_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          pageIndex: currentPage,
-          type: 'text',
-          x: Math.round(x),
-          y: Math.round(y),
-          width: Math.max(80, defaultText.length * 8),
-          height: 24,
-          text: defaultText,
-          fontSize: 12,
-          fontFamily: 'Helvetica',
-          color: '#000000',
-        });
-        showToast('Teks berhasil ditambahkan!', 'success');
-      }
+      // Add text at exact click location and immediately select it for dragging/editing
+      const newId = `text_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const newAnn: PdfAnnotationItem = {
+        id: newId,
+        pageIndex: currentPage,
+        type: 'text',
+        x: Math.round(x),
+        y: Math.round(y),
+        width: 150,
+        height: 28,
+        text: 'Teks Baru',
+        fontSize: 14,
+        fontFamily: 'Helvetica',
+        color: '#000000',
+      };
+      addAnnotation(newAnn);
+      setSelectedAnnotationId(newId);
+      setActiveTool('pan');
+      showToast('Teks ditaruh! Geser posisinya atau ubah teksnya di toolbar atas.', 'success');
       return;
     }
 
@@ -397,7 +479,7 @@ export function PdfEditorStudio() {
   const handleCanvasMouseUp = () => {
     if (isDrawingRect && currentRect && currentRect.w > 4 && currentRect.h > 4) {
       if (activeTool === 'whiteout') {
-        addAnnotation({
+        const newAnn: PdfAnnotationItem = {
           id: `whiteout_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           pageIndex: currentPage,
           type: 'whiteout',
@@ -406,10 +488,11 @@ export function PdfEditorStudio() {
           width: Math.round(currentRect.w),
           height: Math.round(currentRect.h),
           bgColor: '#ffffff',
-        });
-        showToast('Bagian berhasil ditutupi (Whiteout)!', 'success');
+        };
+        addAnnotation(newAnn);
+        showToast('Area ditutupi (Whiteout)!', 'success');
       } else if (activeTool === 'highlight') {
-        addAnnotation({
+        const newAnn: PdfAnnotationItem = {
           id: `highlight_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           pageIndex: currentPage,
           type: 'highlight',
@@ -419,13 +502,95 @@ export function PdfEditorStudio() {
           height: Math.round(currentRect.h),
           color: '#facc15',
           opacity: 0.35,
-        });
-        showToast('Teks berhasil disorot (Highlight)!', 'success');
+        };
+        addAnnotation(newAnn);
+        showToast('Teks disorot (Highlight)!', 'success');
       }
     }
     setIsDrawingRect(false);
     setRectStart(null);
     setCurrentRect(null);
+  };
+
+  // Window-level drag & resize listener for annotations (smooth, robust, never loses pointer)
+  useEffect(() => {
+    if (!isDraggingAnnotation && !isResizingSignature) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!dragStartInfo || !selectedAnnotationId) return;
+
+      const dx = (e.clientX - dragStartInfo.pointerX) / zoom;
+      const dy = (e.clientY - dragStartInfo.pointerY) / zoom;
+
+      if (isDraggingAnnotation) {
+        setAnnotations((prev) =>
+          prev.map((a) => {
+            if (a.id !== selectedAnnotationId) return a;
+            return {
+              ...a,
+              x: Math.max(0, Math.min(pageDimensions.width - 20, Math.round(dragStartInfo.annX + dx))),
+              y: Math.max(0, Math.min(pageDimensions.height - 10, Math.round(dragStartInfo.annY + dy))),
+            };
+          })
+        );
+      } else if (isResizingSignature) {
+        setAnnotations((prev) =>
+          prev.map((a) => {
+            if (a.id !== selectedAnnotationId) return a;
+            const newW = Math.max(30, Math.round(dragStartInfo.annWidth + dx));
+            const newH = Math.max(15, Math.round(dragStartInfo.annHeight + dy));
+            return { ...a, width: newW, height: newH };
+          })
+        );
+      }
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingAnnotation(false);
+      setIsResizingSignature(false);
+      setDragStartInfo(null);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isDraggingAnnotation, isResizingSignature, dragStartInfo, selectedAnnotationId, zoom, pageDimensions]);
+
+  // Dragging annotations (moving text, signature, whiteout, replace)
+  const handleAnnotationPointerDown = (ann: PdfAnnotationItem, e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setSelectedAnnotationId(ann.id);
+    setIsDraggingAnnotation(true);
+    setIsResizingSignature(false);
+    setDragStartInfo({
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      annX: ann.x,
+      annY: ann.y,
+      annWidth: ann.width,
+      annHeight: ann.height,
+    });
+  };
+
+  // Resizing signature from corner handle
+  const handleResizePointerDown = (ann: PdfAnnotationItem, e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setSelectedAnnotationId(ann.id);
+    setIsResizingSignature(true);
+    setIsDraggingAnnotation(false);
+    setDragStartInfo({
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      annX: ann.x,
+      annY: ann.y,
+      annWidth: ann.width,
+      annHeight: ann.height,
+    });
   };
 
   // Click on OCR detected box to open Replace Modal
@@ -437,13 +602,12 @@ export function PdfEditorStudio() {
 
   // Apply Signature from Modal
   const handleApplySignature = (imageDataUrl: string) => {
-    // Place signature in the center of the current page
-    const w = 160;
-    const h = 75;
+    const w = 150;
+    const h = 70;
     const x = Math.max(20, (pageDimensions.width - w) / 2);
     const y = Math.max(20, (pageDimensions.height - h) / 2 + 100);
 
-    addAnnotation({
+    const newAnn: PdfAnnotationItem = {
       id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       pageIndex: currentPage,
       type: 'signature',
@@ -452,8 +616,9 @@ export function PdfEditorStudio() {
       width: w,
       height: h,
       imageDataUrl,
-    });
-    showToast('Tanda tangan disematkan! Anda dapat menggeser posisinya.', 'success');
+    };
+    addAnnotation(newAnn);
+    showToast('Tanda tangan disematkan! Klik & geser posisinya, atau tarik sudutnya untuk mengubah ukuran.', 'success');
   };
 
   // Rotate Page
@@ -509,6 +674,9 @@ export function PdfEditorStudio() {
       showToast('Gagal memproses ekspor PDF.', 'error');
     }
   };
+
+  // Find currently selected annotation object
+  const selectedAnnotation = annotations.find((a) => a.id === selectedAnnotationId);
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-4 text-left">
@@ -635,7 +803,7 @@ export function PdfEditorStudio() {
             {/* Primary Editing Modes */}
             <div className="flex items-center gap-1.5 overflow-x-auto py-1">
               {[
-                { id: 'pan', label: 'Geser (Pan)', icon: Hand },
+                { id: 'pan', label: 'Geser / Pilih', icon: Hand },
                 { id: 'ocr_replace', label: 'Ganti Teks (OCR)', icon: Sparkles },
                 { id: 'add_text', label: 'Tambah Teks', icon: Type },
                 { id: 'whiteout', label: 'Whiteout / Tutup', icon: Eraser },
@@ -709,6 +877,115 @@ export function PdfEditorStudio() {
             </div>
           </div>
 
+          {/* Selected Annotation Quick Edit Toolbar */}
+          {selectedAnnotation && (
+            <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/80 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <Move className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span className="font-bold text-slate-800 dark:text-white">
+                  {selectedAnnotation.type === 'text'
+                    ? 'Teks Terpilih (Klik & Geser di Halaman):'
+                    : selectedAnnotation.type === 'signature'
+                    ? 'Tanda Tangan Terpilih (Geser atau Tarik Sudut):'
+                    : 'Elemen Terpilih:'}
+                </span>
+              </div>
+
+              {selectedAnnotation.type === 'text' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    value={selectedAnnotation.text || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAnnotations((prev) =>
+                        prev.map((a) => (a.id === selectedAnnotation.id ? { ...a, text: val } : a))
+                      );
+                    }}
+                    placeholder="Ubah isi teks..."
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs w-48 sm:w-60 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+
+                  {/* Font Size controls */}
+                  <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnnotations((prev) =>
+                          prev.map((a) =>
+                            a.id === selectedAnnotation.id
+                              ? { ...a, fontSize: Math.max(8, (a.fontSize || 12) - 2) }
+                              : a
+                          )
+                        );
+                      }}
+                      className="px-2 py-0.5 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded"
+                    >
+                      A-
+                    </button>
+                    <span className="text-[11px] font-mono px-1.5 text-slate-600 dark:text-slate-300">
+                      {selectedAnnotation.fontSize || 12}pt
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnnotations((prev) =>
+                          prev.map((a) =>
+                            a.id === selectedAnnotation.id
+                              ? { ...a, fontSize: Math.min(48, (a.fontSize || 12) + 2) }
+                              : a
+                          )
+                        );
+                      }}
+                      className="px-2 py-0.5 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded"
+                    >
+                      A+
+                    </button>
+                  </div>
+
+                  {/* Color selector */}
+                  <div className="flex items-center gap-1">
+                    {['#000000', '#1d4ed8', '#b91c1c'].map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => {
+                          setAnnotations((prev) =>
+                            prev.map((a) =>
+                              a.id === selectedAnnotation.id ? { ...a, color: c } : a
+                            )
+                          );
+                        }}
+                        style={{ backgroundColor: c }}
+                        className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                          selectedAnnotation.color === c ? 'scale-110 border-blue-500' : 'border-white dark:border-slate-700'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteAnnotation(selectedAnnotation.id)}
+                  className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/60 dark:hover:bg-red-900/60 text-red-600 dark:text-red-300 font-semibold text-xs flex items-center gap-1 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAnnotationId(null)}
+                  className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Workspace: Sidebar + Viewport Canvas */}
           <div className="flex gap-4 items-start">
             {/* Left Sidebar: Page Thumbnails */}
@@ -734,7 +1011,10 @@ export function PdfEditorStudio() {
                     return (
                       <div
                         key={idx}
-                        onClick={() => setCurrentPage(idx)}
+                        onClick={() => {
+                          setCurrentPage(idx);
+                          setSelectedAnnotationId(null);
+                        }}
                         className={`p-2 rounded-2xl border transition-all cursor-pointer relative group ${
                           isActive
                             ? 'border-blue-600 bg-blue-50/40 dark:bg-blue-950/40 shadow-md ring-1 ring-blue-500'
@@ -832,58 +1112,134 @@ export function PdfEditorStudio() {
                   {annotations
                     .filter((ann) => ann.pageIndex === currentPage)
                     .map((ann) => {
+                      const isSelected = selectedAnnotationId === ann.id;
+
                       if (ann.type === 'whiteout') {
                         return (
-                          <rect
+                          <g
                             key={ann.id}
-                            x={ann.x}
-                            y={ann.y}
-                            width={ann.width}
-                            height={ann.height}
-                            fill={ann.bgColor || '#ffffff'}
-                            stroke="rgba(0,0,0,0.08)"
-                            strokeWidth="0.5"
-                          />
-                        );
-                      }
-
-                      if (ann.type === 'replace') {
-                        return (
-                          <g key={ann.id}>
+                            onPointerDown={(e) => handleAnnotationPointerDown(ann, e)}
+                            className="cursor-move"
+                          >
                             <rect
                               x={ann.x}
                               y={ann.y}
                               width={ann.width}
                               height={ann.height}
                               fill={ann.bgColor || '#ffffff'}
-                              stroke="rgba(59, 130, 246, 0.4)"
-                              strokeWidth="0.8"
+                              stroke={isSelected ? '#2563eb' : 'rgba(0,0,0,0.08)'}
+                              strokeWidth={isSelected ? '1.5' : '0.5'}
+                              strokeDasharray={isSelected ? '3,3' : 'none'}
+                            />
+                            {isSelected && (
+                              <g
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteAnnotation(ann.id);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <circle cx={ann.x + ann.width} cy={ann.y} r="8" fill="#ef4444" />
+                                <line x1={ann.x + ann.width - 3} y1={ann.y - 3} x2={ann.x + ann.width + 3} y2={ann.y + 3} stroke="#fff" strokeWidth="1.5" />
+                                <line x1={ann.x + ann.width + 3} y1={ann.y - 3} x2={ann.x + ann.width - 3} y2={ann.y + 3} stroke="#fff" strokeWidth="1.5" />
+                              </g>
+                            )}
+                          </g>
+                        );
+                      }
+
+                      if (ann.type === 'replace') {
+                        return (
+                          <g
+                            key={ann.id}
+                            onPointerDown={(e) => handleAnnotationPointerDown(ann, e)}
+                            className="cursor-move"
+                          >
+                            <rect
+                              x={ann.x}
+                              y={ann.y}
+                              width={ann.width}
+                              height={ann.height}
+                              fill={ann.bgColor || '#ffffff'}
+                              stroke={isSelected ? '#2563eb' : 'rgba(59, 130, 246, 0.4)'}
+                              strokeWidth={isSelected ? '1.5' : '0.8'}
+                              strokeDasharray={isSelected ? '3,3' : 'none'}
                             />
                             <text
-                              x={ann.x + 1}
+                              x={ann.x + 2}
                               y={ann.y + Math.max(1, ann.height * 0.78)}
                               fontSize={ann.fontSize || 12}
                               fill={ann.color || '#000000'}
                               fontFamily={ann.fontFamily || 'Helvetica, Arial, sans-serif'}
+                              className="select-none pointer-events-none"
                             >
                               {ann.text}
                             </text>
+                            {isSelected && (
+                              <g
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteAnnotation(ann.id);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <circle cx={ann.x + ann.width} cy={ann.y} r="8" fill="#ef4444" />
+                                <line x1={ann.x + ann.width - 3} y1={ann.y - 3} x2={ann.x + ann.width + 3} y2={ann.y + 3} stroke="#fff" strokeWidth="1.5" />
+                                <line x1={ann.x + ann.width + 3} y1={ann.y - 3} x2={ann.x + ann.width - 3} y2={ann.y + 3} stroke="#fff" strokeWidth="1.5" />
+                              </g>
+                            )}
                           </g>
                         );
                       }
 
                       if (ann.type === 'text') {
+                        const fSize = ann.fontSize || 14;
+                        const approxWidth = Math.max(60, (ann.text?.length || 8) * (fSize * 0.65) + 16);
+                        const approxHeight = fSize + 10;
+
                         return (
-                          <text
+                          <g
                             key={ann.id}
-                            x={ann.x}
-                            y={ann.y + (ann.fontSize || 12)}
-                            fontSize={ann.fontSize || 12}
-                            fill={ann.color || '#000000'}
-                            fontFamily={ann.fontFamily || 'Helvetica, Arial, sans-serif'}
+                            onPointerDown={(e) => handleAnnotationPointerDown(ann, e)}
+                            className="cursor-move group"
                           >
-                            {ann.text}
-                          </text>
+                            {/* Draggable Bounding Hit Box */}
+                            <rect
+                              x={ann.x - 4}
+                              y={ann.y - 4}
+                              width={approxWidth}
+                              height={approxHeight}
+                              fill={isSelected ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.04)'}
+                              stroke={isSelected ? '#2563eb' : 'rgba(59, 130, 246, 0.4)'}
+                              strokeWidth={isSelected ? '1.5' : '1'}
+                              strokeDasharray={isSelected ? '4,4' : '2,2'}
+                              rx="4"
+                              className="hover:stroke-blue-500 hover:fill-blue-500/20 transition-all cursor-move"
+                            />
+                            <text
+                              x={ann.x}
+                              y={ann.y + fSize * 0.82}
+                              fontSize={fSize}
+                              fill={ann.color || '#000000'}
+                              fontFamily={ann.fontFamily || 'Helvetica, Arial, sans-serif'}
+                              className="select-none pointer-events-none font-medium"
+                            >
+                              {ann.text}
+                            </text>
+                            {isSelected && (
+                              <g
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteAnnotation(ann.id);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <circle cx={ann.x + approxWidth - 2} cy={ann.y - 4} r="8" fill="#ef4444" />
+                                <line x1={ann.x + approxWidth - 5} y1={ann.y - 7} x2={ann.x + approxWidth + 1} y2={ann.y - 1} stroke="#fff" strokeWidth="1.5" />
+                                <line x1={ann.x + approxWidth + 1} y1={ann.y - 7} x2={ann.x + approxWidth - 5} y2={ann.y - 1} stroke="#fff" strokeWidth="1.5" />
+                              </g>
+                            )}
+                          </g>
                         );
                       }
 
@@ -897,22 +1253,66 @@ export function PdfEditorStudio() {
                             height={ann.height}
                             fill={ann.color || '#facc15'}
                             opacity={ann.opacity || 0.35}
+                            onPointerDown={(e) => handleAnnotationPointerDown(ann, e)}
+                            className="cursor-move"
                           />
                         );
                       }
 
                       if (ann.type === 'signature' && ann.imageDataUrl) {
                         return (
-                          <image
+                          <g
                             key={ann.id}
-                            href={ann.imageDataUrl}
-                            x={ann.x}
-                            y={ann.y}
-                            width={ann.width}
-                            height={ann.height}
-                            preserveAspectRatio="xMidYMid meet"
-                            className="cursor-move"
-                          />
+                            onPointerDown={(e) => handleAnnotationPointerDown(ann, e)}
+                            className="cursor-move group"
+                          >
+                            <image
+                              href={ann.imageDataUrl}
+                              x={ann.x}
+                              y={ann.y}
+                              width={ann.width}
+                              height={ann.height}
+                              preserveAspectRatio="xMidYMid meet"
+                            />
+                            {/* Selection border */}
+                            {isSelected && (
+                              <>
+                                <rect
+                                  x={ann.x - 2}
+                                  y={ann.y - 2}
+                                  width={ann.width + 4}
+                                  height={ann.height + 4}
+                                  fill="none"
+                                  stroke="#2563eb"
+                                  strokeWidth="1.5"
+                                  strokeDasharray="4,4"
+                                />
+                                {/* Delete button top right */}
+                                <g
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteAnnotation(ann.id);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <circle cx={ann.x + ann.width + 2} cy={ann.y - 2} r="8" fill="#ef4444" />
+                                  <line x1={ann.x + ann.width - 1} y1={ann.y - 5} x2={ann.x + ann.width + 5} y2={ann.y + 1} stroke="#fff" strokeWidth="1.5" />
+                                  <line x1={ann.x + ann.width + 5} y1={ann.y - 5} x2={ann.x + ann.width - 1} y2={ann.y + 1} stroke="#fff" strokeWidth="1.5" />
+                                </g>
+                                {/* Bottom right resize handle */}
+                                <circle
+                                  cx={ann.x + ann.width + 2}
+                                  cy={ann.y + ann.height + 2}
+                                  r="7"
+                                  fill="#2563eb"
+                                  stroke="#ffffff"
+                                  strokeWidth="1.5"
+                                  className="cursor-nwse-resize"
+                                  onPointerDown={(e) => handleResizePointerDown(ann, e)}
+                                />
+                              </>
+                            )}
+                          </g>
                         );
                       }
 
@@ -933,15 +1333,16 @@ export function PdfEditorStudio() {
                           width={box.x1 - box.x0}
                           height={box.y1 - box.y0}
                           fill="rgba(59, 130, 246, 0.08)"
-                          stroke="rgba(59, 130, 246, 0.5)"
-                          strokeWidth="1"
-                          strokeDasharray="2,2"
-                          className="hover:fill-blue-500/25 hover:stroke-blue-600 transition-all"
+                          stroke="rgba(59, 130, 246, 0.6)"
+                          strokeWidth="1.2"
+                          strokeDasharray="3,3"
+                          rx="2"
+                          className="hover:fill-blue-500/30 hover:stroke-blue-600 transition-all"
                         />
                       </g>
                     ))}
 
-                  {/* Live Dragging Rectangle */}
+                  {/* Live Dragging Rectangle for Whiteout or Highlight */}
                   {isDrawingRect && currentRect && (
                     <rect
                       x={currentRect.x}
@@ -961,7 +1362,10 @@ export function PdfEditorStudio() {
               <div className="mt-4 flex items-center gap-2 p-1.5 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 shadow-xl">
                 <button
                   type="button"
-                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                  onClick={() => {
+                    setCurrentPage((p) => Math.max(0, p - 1));
+                    setSelectedAnnotationId(null);
+                  }}
                   disabled={currentPage === 0}
                   className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30"
                 >
@@ -972,7 +1376,10 @@ export function PdfEditorStudio() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setCurrentPage((p) => Math.min(pageCount - 1, p + 1))}
+                  onClick={() => {
+                    setCurrentPage((p) => Math.min(pageCount - 1, p + 1));
+                    setSelectedAnnotationId(null);
+                  }}
                   disabled={currentPage >= pageCount - 1}
                   className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30"
                 >
