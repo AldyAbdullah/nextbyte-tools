@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { createWorker } from 'tesseract.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Allow up to 60 seconds on serverless
 
 export async function POST(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,19 +37,51 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await imageFile.arrayBuffer();
     const imageBuffer = Buffer.from(arrayBuffer);
 
-    // Locate tessdata path (check public/tessdata first, then src/scripts/tessdata)
-    let tessdataPath = path.join(process.cwd(), 'public', 'tessdata');
-    if (!fs.existsSync(path.join(tessdataPath, 'eng.traineddata'))) {
-      tessdataPath = path.join(process.cwd(), 'src', 'scripts', 'tessdata');
+    // Ensure cache directory in os.tmpdir() (always writable in AWS Lambda / Vercel)
+    const tmpCacheDir = path.join(os.tmpdir(), 'nextbyte_tessdata');
+    if (!fs.existsSync(tmpCacheDir)) {
+      try {
+        fs.mkdirSync(tmpCacheDir, { recursive: true });
+      } catch {}
+    }
+
+    // Locate tessdata path (check candidate directories in runtime)
+    const candidateDirs = [
+      path.join(process.cwd(), 'public', 'tessdata'),
+      path.join(process.cwd(), 'src', 'scripts', 'tessdata'),
+      path.join(process.cwd(), 'tessdata'),
+    ];
+
+    let localTessdata: string | null = null;
+    for (const dir of candidateDirs) {
+      if (fs.existsSync(path.join(dir, 'eng.traineddata'))) {
+        localTessdata = dir;
+        break;
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workerOptions: any = {
+      cachePath: tmpCacheDir,
+    };
+
+    if (localTessdata) {
+      workerOptions.langPath = localTessdata;
+      workerOptions.cacheMethod = 'readOnly';
+      workerOptions.gzip = false;
+    } else {
+      // If local files not bundled by serverless, fall back to official CDN with /tmp cache
+      workerOptions.langPath = 'https://tessdata.projectnaptha.com/4.0.0';
+      workerOptions.gzip = true;
     }
 
     // Initialize Server-Side OCR Worker
-    worker = await createWorker(lang, 1, {
-      langPath: tessdataPath,
-      cachePath: tessdataPath,
-      cacheMethod: 'readOnly',
-      gzip: false,
-    });
+    try {
+      worker = await createWorker(lang, 1, workerOptions);
+    } catch (langErr) {
+      console.warn(`Failed to initialize OCR with lang "${lang}", falling back to "eng":`, langErr);
+      worker = await createWorker('eng', 1, workerOptions);
+    }
 
     const ret = await worker.recognize(imageBuffer, {}, { blocks: true });
 

@@ -88,6 +88,8 @@ export function PdfEditorStudio() {
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const [docId, setDocId] = useState<string>('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pdfJsDocRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const currentRenderTaskRef = useRef<any>(null);
@@ -165,26 +167,7 @@ export function PdfEditorStudio() {
     }
 
     try {
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      const newDocId = `${file.name}_${file.size}_${file.lastModified}_${Date.now()}`;
-
-      setPdfFile(file);
-      setPdfBytes(bytes);
-      setDocId(newDocId);
-      setAnnotations([]);
-      setHistory([]);
-      setRedoStack([]);
-      setDeletedPages([]);
-      setRotations({});
-      setOcrBoxes({});
-      setOcrType({});
-      setThumbnailUrls({});
-      setCurrentPage(0);
-      setActiveTool('pan');
-      setSelectedAnnotationId(null);
-
-      // Cancel previous active render task if any
+      // Immediately cancel any pending render tasks from previous document
       if (currentRenderTaskRef.current) {
         try {
           currentRenderTaskRef.current.cancel();
@@ -192,15 +175,38 @@ export function PdfEditorStudio() {
         currentRenderTaskRef.current = null;
       }
 
+      // Immediately clear thumbnails & selections
+      setThumbnailUrls({});
+      setSelectedAnnotationId(null);
+      setAnnotations([]);
+      setHistory([]);
+      setRedoStack([]);
+      setDeletedPages([]);
+      setRotations({});
+      setOcrBoxes({});
+      setOcrType({});
+      setWatermark(null);
+
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const newDocId = `${file.name}_${file.size}_${file.lastModified}_${Date.now()}`;
+
       // Initialize PDF.js via client loader
       const pdfjs = await getPdfJsLib();
       if (!pdfjs) throw new Error('PDF.js tidak tersedia');
       const loadingTask = pdfjs.getDocument({ data: bytes });
       const doc = await loadingTask.promise;
+
+      // ATOMIC UPDATE: Commit the new document and all associated state together!
       pdfJsDocRef.current = doc;
+      setPdfDoc(doc);
+      setPdfFile(file);
+      setPdfBytes(bytes);
+      setDocId(newDocId);
       setPageCount(doc.numPages);
       setPageOrder(Array.from({ length: doc.numPages }, (_, i) => i));
-      setWatermark(null);
+      setCurrentPage(0);
+      setActiveTool('pan');
 
       showToast(`Dokumen "${file.name}" berhasil dimuat!`, 'success');
     } catch (err) {
@@ -211,12 +217,12 @@ export function PdfEditorStudio() {
 
   // 2. Render Active Page onto HTML5 Canvas & Extract Digital Text
   const renderCurrentPage = useCallback(async () => {
-    if (!pdfJsDocRef.current || pageCount === 0 || !docId) return;
+    const doc = pdfDoc || pdfJsDocRef.current;
+    if (!doc || pageCount === 0 || !docId) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     try {
-      const doc = pdfJsDocRef.current;
       const page = await doc.getPage(currentPage + 1);
       const rotationAngle = rotations[currentPage] || 0;
       const viewport = page.getViewport({ scale: zoom, rotation: rotationAngle });
@@ -318,27 +324,28 @@ export function PdfEditorStudio() {
     } catch (err) {
       console.warn('Render error:', err);
     }
-  }, [docId, currentPage, pageCount, zoom, rotations, ocrBoxes]);
+  }, [pdfDoc, docId, currentPage, pageCount, zoom, rotations, ocrBoxes]);
 
   useEffect(() => {
     renderCurrentPage();
   }, [renderCurrentPage]);
 
-  // 3. Render Thumbnails for Sidebar (synchronized with docId and rotations)
+  // 3. Render Thumbnails for Sidebar (strictly synchronized with pdfDoc and docId)
   useEffect(() => {
-    if (!pdfJsDocRef.current || pageCount === 0 || !docId) return;
+    const doc = pdfDoc || pdfJsDocRef.current;
+    if (!doc || pageCount === 0 || !docId) return;
     let isCancelled = false;
+    const activeDocId = docId;
 
     // Immediately clear stale thumbnails when switching file or rotating
     setThumbnailUrls({});
 
     async function loadThumbnails() {
-      const doc = pdfJsDocRef.current;
-      if (!doc) return;
+      if (!doc || isCancelled) return;
       const newThumbs: Record<number, string> = {};
 
       for (let i = 0; i < doc.numPages; i++) {
-        if (isCancelled) return;
+        if (isCancelled || docId !== activeDocId) return;
         try {
           const page = await doc.getPage(i + 1);
           const rotationAngle = rotations[i] || 0;
@@ -349,13 +356,13 @@ export function PdfEditorStudio() {
           const ctx = thumbCanvas.getContext('2d');
           if (ctx) {
             await page.render({ canvasContext: ctx, viewport: vp }).promise;
-            if (isCancelled) return;
+            if (isCancelled || docId !== activeDocId) return;
             newThumbs[i] = thumbCanvas.toDataURL('image/jpeg', 0.7);
           }
         } catch {}
       }
 
-      if (!isCancelled) {
+      if (!isCancelled && docId === activeDocId) {
         setThumbnailUrls(newThumbs);
       }
     }
@@ -364,7 +371,7 @@ export function PdfEditorStudio() {
     return () => {
       isCancelled = true;
     };
-  }, [docId, pageCount, rotations]);
+  }, [pdfDoc, docId, pageCount, rotations]);
 
   // 4. On-Demand OCR Trigger (Per-page Server-Side OCR)
   const handleRunPageOcr = async () => {
@@ -386,9 +393,26 @@ export function PdfEditorStudio() {
       const canvas = canvasRef.current;
       if (!canvas) throw new Error('Canvas halaman belum siap.');
 
+      // Scale canvas to optimal OCR resolution (max 1600px) for high speed & zero timeout
+      let ocrCanvas = canvas;
+      const maxDim = 1600;
+      if (canvas.width > maxDim || canvas.height > maxDim) {
+        const scale = Math.min(maxDim / canvas.width, maxDim / canvas.height);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = Math.round(canvas.width * scale);
+        tempCanvas.height = Math.round(canvas.height * scale);
+        const tempCtx = tempCanvas.getContext('2d');
+        if (tempCtx) {
+          tempCtx.imageSmoothingEnabled = true;
+          tempCtx.imageSmoothingQuality = 'high';
+          tempCtx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
+          ocrCanvas = tempCanvas;
+        }
+      }
+
       // Convert current page canvas to compressed JPEG blob (~150KB)
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, 'image/jpeg', 0.85)
+        ocrCanvas.toBlob(resolve, 'image/jpeg', 0.85)
       );
       if (!blob) throw new Error('Gagal mengekspor gambar halaman.');
 
@@ -397,8 +421,8 @@ export function PdfEditorStudio() {
       fd.append('pageIndex', currentPage.toString());
       fd.append('pageWidth', pageDimensions.width.toString());
       fd.append('pageHeight', pageDimensions.height.toString());
-      fd.append('canvasWidth', canvas.width.toString());
-      fd.append('canvasHeight', canvas.height.toString());
+      fd.append('canvasWidth', ocrCanvas.width.toString());
+      fd.append('canvasHeight', ocrCanvas.height.toString());
       fd.append('lang', 'ind+eng');
 
       const res = await fetch('/api/tools/pdf-editor/ocr', {

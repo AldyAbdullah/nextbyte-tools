@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
     return config;
   },
   serverExternalPackages: ['pdfjs-dist', 'tesseract.js'],
+  outputFileTracingIncludes: {
+    '/api/tools/pdf-editor/ocr': [
+      './public/tessdata/**/*',
+      './src/scripts/tessdata/**/*',
+    ],
+  },
 };
 
 export default nextConfig;
