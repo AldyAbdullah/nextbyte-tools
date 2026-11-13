@@ -20,6 +20,48 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     {
+      url: `${baseUrl}/tools/split-pdf`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/tools/compress-pdf`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/tools/image-to-pdf`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/tools/pdf-to-image`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/tools/password-generator`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/tools/json-formatter`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/tools/image-converter`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
       url: `${baseUrl}/tools/pdf-editor`,
       lastModified: currentDate,
       changeFrequency: 'daily',
@@ -101,7 +143,28 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   // Halaman Alat Lainnya
   const toolPages: MetadataRoute.Sitemap = TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive', 'pdf-editor'].includes(tool.slug)
+    (tool) =>
+      ![
+        'qr-code-generator',
+        'barcode-generator',
+        'mail-merge',
+        'word-page-number',
+        'caption-generator',
+        'image-compressor',
+        'image-sharpener',
+        'image-background-remover',
+        'send',
+        'receive',
+        'pdf-editor',
+        'merge-pdf',
+        'split-pdf',
+        'compress-pdf',
+        'image-to-pdf',
+        'pdf-to-image',
+        'password-generator',
+        'json-formatter',
+        'image-converter',
+      ].includes(tool.slug)
   ).map((tool) => ({
     url: `${baseUrl}/tools/${tool.slug}`,
     lastModified: currentDate,

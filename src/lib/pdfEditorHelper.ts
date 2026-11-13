@@ -3,7 +3,7 @@ import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 export interface PdfAnnotationItem {
   id: string;
   pageIndex: number;
-  type: 'whiteout' | 'text' | 'replace' | 'signature' | 'image' | 'stamp' | 'highlight';
+  type: 'whiteout' | 'text' | 'replace' | 'signature' | 'image' | 'stamp' | 'highlight' | 'draw' | 'shape';
   x: number; // in PDF points (from top-left)
   y: number; // in PDF points (from top-left)
   width: number;
@@ -14,8 +14,10 @@ export interface PdfAnnotationItem {
   fontFamily?: 'Helvetica' | 'TimesRoman' | 'Courier';
   color?: string; // hex #000000
   bgColor?: string; // hex #ffffff for whiteout
-  imageDataUrl?: string; // base64 PNG/JPG data URL for signature/stamp/image
+  imageDataUrl?: string; // base64 PNG/JPG data URL for signature/stamp/image/draw/shape
   opacity?: number;
+  strokeWidth?: number;
+  shapeType?: 'rect' | 'circle' | 'arrow';
 }
 
 export interface WatermarkOptions {
@@ -154,7 +156,9 @@ export async function applyPdfModifications(
 
       case 'signature':
       case 'image':
-      case 'stamp': {
+      case 'stamp':
+      case 'draw':
+      case 'shape': {
         if (ann.imageDataUrl) {
           try {
             const dataParts = ann.imageDataUrl.split(',');

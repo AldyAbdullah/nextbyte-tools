@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Search, X, QrCode, Barcode, KeyRound, FileCode2, Minimize2, Image, FileText, Link2, Binary, Type, AlignLeft,
-  Clipboard, ArrowRight, Sparkles, Share2, Mail, ListOrdered, Eraser, FileEdit, Layers } from 'lucide-react';
+  Clipboard, ArrowRight, Sparkles, Share2, Mail, ListOrdered, Eraser, FileEdit, Layers, Scissors } from 'lucide-react';
 import { TOOLS_REGISTRY } from '@/config/tools';
 import { ToolItem } from '@/types/tools';
 
@@ -27,6 +27,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Clipboard,
   FileEdit,
   Layers,
+  Scissors,
 };
 
 interface SearchModalProps {

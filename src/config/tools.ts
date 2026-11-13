@@ -106,30 +106,80 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     status: 'available',
     iconName: 'Layers',
     featured: true,
-    badge: 'Baru',
+    badge: 'Populer',
     tags: ['pdf', 'gabung pdf', 'merge pdf', 'combine pdf', 'satukan pdf', 'ijazah', 'cv', 'ktp', 'berkas']
+  },
+  {
+    id: 'split-pdf',
+    name: 'Pisah PDF (Split PDF)',
+    slug: 'split-pdf',
+    description: 'Pisahkan halaman PDF tertentu atau ekstrak tiap lembar menjadi dokumen terpisah (.ZIP) secara cepat dan 100% aman di browser.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Scissors',
+    featured: true,
+    badge: 'Baru',
+    tags: ['pdf', 'pisah pdf', 'split pdf', 'ekstrak pdf', 'potong pdf', 'halaman', 'lembar']
+  },
+  {
+    id: 'compress-pdf',
+    name: 'Kompres PDF',
+    slug: 'compress-pdf',
+    description: 'Kecilkan ukuran file PDF untuk syarat upload CPNS, BUMN, dan beasiswa (< 200KB, < 500KB) dengan teks tetap tajam dan jernih.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Minimize2',
+    featured: true,
+    badge: 'Baru',
+    tags: ['pdf', 'kompres pdf', 'compress pdf', 'kecilkan ukuran', 'cpns', 'bumn', 'dokumen']
+  },
+  {
+    id: 'image-to-pdf',
+    name: 'Gambar ke PDF',
+    slug: 'image-to-pdf',
+    description: 'Ubah dan satukan banyak foto JPG, PNG, atau WebP menjadi satu file PDF rapi dengan pilihan ukuran A4, F4/Folio, dan orientasi otomatis.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Image',
+    featured: true,
+    badge: 'Baru',
+    tags: ['pdf', 'gambar ke pdf', 'foto ke pdf', 'jpg to pdf', 'png to pdf', 'f4', 'folio', 'a4']
+  },
+  {
+    id: 'pdf-to-image',
+    name: 'PDF ke Gambar (JPG / PNG)',
+    slug: 'pdf-to-image',
+    description: 'Ekstrak setiap lembar dokumen PDF menjadi gambar tajam resolusi tinggi (HD 300 DPI). Unduh per halaman atau sekaligus dalam arsip ZIP.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Image',
+    featured: true,
+    badge: 'Baru',
+    tags: ['pdf', 'pdf ke gambar', 'pdf to jpg', 'pdf to png', 'ekstrak gambar', 'hd']
   },
   {
     id: 'password-generator',
     name: 'Strong Password Generator',
     slug: 'password-generator',
-    description: 'Generate ultra-secure, cryptographically random passwords with custom rules, symbols, and memorability scores.',
+    description: 'Buat kata sandi ultra-aman berbasis entropi kriptografi acak (Web Crypto API) dengan kustomisasi simbol, angka, dan mode frasa kata mudah diingat.',
     category: 'Security',
-    status: 'coming-soon',
+    status: 'available',
     iconName: 'KeyRound',
     featured: true,
-    tags: ['security', 'password', 'crypto', 'generator']
+    badge: 'Baru',
+    tags: ['security', 'password', 'crypto', 'generator', 'keamanan', 'sandi']
   },
   {
     id: 'json-formatter',
     name: 'JSON Formatter & Validator',
     slug: 'json-formatter',
-    description: 'Beautify, minify, validate, and convert JSON structures with syntax highlighting and tree exploration.',
+    description: 'Format rapi (beautify), perkecil (minify), dan validasi sintaks JSON dengan penampil hierarki Tree View interaktif dan deteksi error baris.',
     category: 'Developer',
-    status: 'coming-soon',
+    status: 'available',
     iconName: 'FileCode2',
     featured: true,
-    tags: ['developer', 'json', 'formatter', 'validator']
+    badge: 'Baru',
+    tags: ['developer', 'json', 'formatter', 'validator', 'beautify', 'minify', 'tree']
   },
   {
     id: 'image-compressor',
@@ -171,11 +221,13 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     id: 'image-converter',
     name: 'Image Format Converter',
     slug: 'image-converter',
-    description: 'Instantly convert between PNG, JPG, WebP, SVG, and ICO formats right inside your browser.',
+    description: 'Ubah format gambar antara PNG, JPG, WebP, Favicon ICO, dan BMP secara instan di browser dengan fitur konversi massal (batch).',
     category: 'Media',
-    status: 'coming-soon',
+    status: 'available',
     iconName: 'Image',
-    tags: ['image', 'convert', 'png', 'jpg', 'webp']
+    featured: true,
+    badge: 'Baru',
+    tags: ['image', 'convert', 'png', 'jpg', 'webp', 'ico', 'favicon', 'konversi gambar']
   },
   {
     id: 'pdf-tools',

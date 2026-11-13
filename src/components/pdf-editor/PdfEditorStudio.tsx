@@ -27,6 +27,8 @@ import {
   ShieldAlert,
   ArrowUp,
   ArrowDown,
+  Pencil,
+  Shapes,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useToast } from '@/components/common/Toast';
@@ -103,8 +105,16 @@ export function PdfEditorStudio() {
 
   // Tools & Mode
   const [activeTool, setActiveTool] = useState<
-    'pan' | 'ocr_replace' | 'add_text' | 'whiteout' | 'signature' | 'highlight'
+    'pan' | 'ocr_replace' | 'add_text' | 'whiteout' | 'signature' | 'highlight' | 'draw' | 'shape'
   >('pan');
+
+  // Drawing & Shape state
+  const [drawColor, setDrawColor] = useState('#ef4444');
+  const [drawWidth, setDrawWidth] = useState(3);
+  const [shapeType, setShapeType] = useState<'rect' | 'circle' | 'arrow'>('rect');
+  const [shapeColor, setShapeColor] = useState('#ef4444');
+  const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
+  const [freehandPoints, setFreehandPoints] = useState<Array<{ x: number; y: number }>>([]);
 
   // Sidebar
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -488,7 +498,147 @@ export function PdfEditorStudio() {
     showToast('Elemen berhasil dihapus.', 'info');
   };
 
-  // Canvas Mouse / Pointer events for creating Whiteout, Highlight, or Text
+  // Finish Freehand Drawing -> convert points to transparent PNG image annotation
+  const finishFreehandDrawing = () => {
+    if (freehandPoints.length < 2) {
+      setIsDrawingFreehand(false);
+      setFreehandPoints([]);
+      return;
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const pt of freehandPoints) {
+      if (pt.x < minX) minX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+
+    const pad = drawWidth * 2;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = maxX + pad;
+    maxY = maxY + pad;
+
+    const w = Math.max(10, maxX - minX);
+    const h = Math.max(10, maxY - minY);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(w);
+    canvas.height = Math.ceil(h);
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      ctx.strokeStyle = drawColor;
+      ctx.lineWidth = drawWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(freehandPoints[0].x - minX, freehandPoints[0].y - minY);
+      for (let i = 1; i < freehandPoints.length; i++) {
+        ctx.lineTo(freehandPoints[i].x - minX, freehandPoints[i].y - minY);
+      }
+      ctx.stroke();
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const newAnn: PdfAnnotationItem = {
+        id: `draw_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        pageIndex: currentPage,
+        type: 'draw',
+        x: Math.round(minX),
+        y: Math.round(minY),
+        width: Math.round(w),
+        height: Math.round(h),
+        imageDataUrl: dataUrl,
+      };
+      addAnnotation(newAnn);
+    }
+
+    setIsDrawingFreehand(false);
+    setFreehandPoints([]);
+  };
+
+  // Finish Shape Drawing -> convert shape to transparent PNG image annotation
+  const finishShapeDrawing = () => {
+    if (!currentRect || currentRect.w < 5 || currentRect.h < 5) {
+      setIsDrawingRect(false);
+      setRectStart(null);
+      setCurrentRect(null);
+      return;
+    }
+
+    const w = currentRect.w;
+    const h = currentRect.h;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(w);
+    canvas.height = Math.ceil(h);
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      ctx.strokeStyle = shapeColor;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (shapeType === 'rect') {
+        ctx.strokeRect(2, 2, w - 4, h - 4);
+      } else if (shapeType === 'circle') {
+        ctx.beginPath();
+        ctx.ellipse(w / 2, h / 2, (w - 4) / 2, (h - 4) / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (shapeType === 'arrow') {
+        const x1 = 4;
+        const y1 = 4;
+        const x2 = w - 4;
+        const y2 = h - 4;
+        const headlen = Math.min(15, Math.hypot(x2 - x1, y2 - y1) / 3);
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(
+          x2 - headlen * Math.cos(angle - Math.PI / 6),
+          y2 - headlen * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          x2 - headlen * Math.cos(angle + Math.PI / 6),
+          y2 - headlen * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fillStyle = shapeColor;
+        ctx.fill();
+      }
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const newAnn: PdfAnnotationItem = {
+        id: `shape_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        pageIndex: currentPage,
+        type: 'shape',
+        x: Math.round(currentRect.x),
+        y: Math.round(currentRect.y),
+        width: Math.round(w),
+        height: Math.round(h),
+        imageDataUrl: dataUrl,
+      };
+      addAnnotation(newAnn);
+    }
+
+    setIsDrawingRect(false);
+    setRectStart(null);
+    setCurrentRect(null);
+  };
+
+  // Canvas Mouse / Pointer events for creating Whiteout, Highlight, Text, Draw, Shape
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     // If clicking on empty canvas space, deselect active annotation
     if (activeTool === 'pan') {
@@ -499,6 +649,19 @@ export function PdfEditorStudio() {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - rect.left) / zoom;
     const y = (e.clientY - rect.top) / zoom;
+
+    if (activeTool === 'draw') {
+      setIsDrawingFreehand(true);
+      setFreehandPoints([{ x, y }]);
+      return;
+    }
+
+    if (activeTool === 'shape') {
+      setIsDrawingRect(true);
+      setRectStart({ x, y });
+      setCurrentRect({ x, y, w: 0, h: 0 });
+      return;
+    }
 
     if (activeTool === 'add_text') {
       // Add text at exact click location and immediately select it for dragging/editing
@@ -531,11 +694,16 @@ export function PdfEditorStudio() {
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDrawingRect || !rectStart) return;
-
     const rect = e.currentTarget.getBoundingClientRect();
     const curX = (e.clientX - rect.left) / zoom;
     const curY = (e.clientY - rect.top) / zoom;
+
+    if (isDrawingFreehand) {
+      setFreehandPoints((prev) => [...prev, { x: curX, y: curY }]);
+      return;
+    }
+
+    if (!isDrawingRect || !rectStart) return;
 
     const x = Math.min(rectStart.x, curX);
     const y = Math.min(rectStart.y, curY);
@@ -546,6 +714,16 @@ export function PdfEditorStudio() {
   };
 
   const handleCanvasMouseUp = () => {
+    if (isDrawingFreehand) {
+      finishFreehandDrawing();
+      return;
+    }
+
+    if (isDrawingRect && activeTool === 'shape') {
+      finishShapeDrawing();
+      return;
+    }
+
     if (isDrawingRect && currentRect && currentRect.w > 4 && currentRect.h > 4) {
       if (activeTool === 'whiteout') {
         const newAnn: PdfAnnotationItem = {
@@ -948,6 +1126,8 @@ export function PdfEditorStudio() {
                 { id: 'whiteout', label: 'Whiteout / Tutup', icon: Eraser },
                 { id: 'signature', label: 'Tanda Tangan', icon: PenTool },
                 { id: 'stamp', label: 'Stempel & Gambar', icon: Stamp },
+                { id: 'draw', label: 'Coret (Pensil)', icon: Pencil },
+                { id: 'shape', label: 'Bentuk', icon: Shapes },
                 { id: 'watermark', label: 'Watermark', icon: ShieldAlert },
                 { id: 'highlight', label: 'Sorot (Highlight)', icon: Highlighter },
               ].map((tool) => {
@@ -1023,6 +1203,91 @@ export function PdfEditorStudio() {
                 </button>
               </div>
             </div>
+
+            {/* Draw Sub-options Bar */}
+            {activeTool === 'draw' && (
+              <div className="w-full flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+                <span className="font-bold text-slate-500">Warna Coretan:</span>
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { color: '#ef4444', label: 'Merah' },
+                    { color: '#2563eb', label: 'Biru' },
+                    { color: '#0f172a', label: 'Hitam' },
+                    { color: '#16a34a', label: 'Hijau' },
+                  ].map((c) => (
+                    <button
+                      key={c.color}
+                      type="button"
+                      onClick={() => setDrawColor(c.color)}
+                      style={{ backgroundColor: c.color }}
+                      className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                        drawColor === c.color ? 'scale-125 border-white ring-2 ring-primary-500 shadow-sm' : 'border-transparent'
+                      }`}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+                <span className="font-bold text-slate-500 ml-2">Ketebalan:</span>
+                <div className="flex items-center gap-1">
+                  {[2, 3, 5].map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => setDrawWidth(w)}
+                      className={`px-2 py-0.5 rounded-lg border text-xs font-semibold ${
+                        drawWidth === w
+                          ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-950 dark:text-primary-300'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      {w === 2 ? 'Tipis' : w === 3 ? 'Sedang' : 'Tebal'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Shape Sub-options Bar */}
+            {activeTool === 'shape' && (
+              <div className="w-full flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+                <span className="font-bold text-slate-500">Bentuk:</span>
+                <div className="flex items-center gap-1">
+                  {[
+                    { type: 'rect', label: 'Kotak' },
+                    { type: 'circle', label: 'Lingkaran' },
+                    { type: 'arrow', label: 'Panah' },
+                  ].map((s) => (
+                    <button
+                      key={s.type}
+                      type="button"
+                      onClick={() => setShapeType(s.type as 'rect' | 'circle' | 'arrow')}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${
+                        shapeType === s.type
+                          ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-950 dark:text-primary-300'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="font-bold text-slate-500 ml-2">Warna:</span>
+                <div className="flex items-center gap-1.5">
+                  {['#ef4444', '#2563eb', '#0f172a', '#facc15'].map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => setShapeColor(col)}
+                      style={{ backgroundColor: col }}
+                      className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                        shapeColor === col ? 'scale-125 border-white ring-2 ring-primary-500 shadow-sm' : 'border-transparent'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Selected Annotation Quick Edit Toolbar */}
@@ -1439,7 +1704,14 @@ export function PdfEditorStudio() {
                         );
                       }
 
-                      if ((ann.type === 'signature' || ann.type === 'stamp' || ann.type === 'image') && ann.imageDataUrl) {
+                      if (
+                        (ann.type === 'signature' ||
+                          ann.type === 'stamp' ||
+                          ann.type === 'image' ||
+                          ann.type === 'draw' ||
+                          ann.type === 'shape') &&
+                        ann.imageDataUrl
+                      ) {
                         return (
                           <g
                             key={ann.id}
@@ -1542,8 +1814,61 @@ export function PdfEditorStudio() {
                       </g>
                     ))}
 
+                  {/* Live Freehand Pencil Preview */}
+                  {isDrawingFreehand && freehandPoints.length > 1 && (
+                    <polyline
+                      points={freehandPoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                      fill="none"
+                      stroke={drawColor}
+                      strokeWidth={drawWidth}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  )}
+
+                  {/* Live Shape Preview */}
+                  {isDrawingRect && activeTool === 'shape' && currentRect && (
+                    <>
+                      {shapeType === 'rect' && (
+                        <rect
+                          x={currentRect.x}
+                          y={currentRect.y}
+                          width={currentRect.w}
+                          height={currentRect.h}
+                          fill="none"
+                          stroke={shapeColor}
+                          strokeWidth="2.5"
+                          strokeDasharray="4,4"
+                        />
+                      )}
+                      {shapeType === 'circle' && (
+                        <ellipse
+                          cx={currentRect.x + currentRect.w / 2}
+                          cy={currentRect.y + currentRect.h / 2}
+                          rx={currentRect.w / 2}
+                          ry={currentRect.h / 2}
+                          fill="none"
+                          stroke={shapeColor}
+                          strokeWidth="2.5"
+                          strokeDasharray="4,4"
+                        />
+                      )}
+                      {shapeType === 'arrow' && (
+                        <line
+                          x1={currentRect.x}
+                          y1={currentRect.y}
+                          x2={currentRect.x + currentRect.w}
+                          y2={currentRect.y + currentRect.h}
+                          stroke={shapeColor}
+                          strokeWidth="2.5"
+                          strokeDasharray="4,4"
+                        />
+                      )}
+                    </>
+                  )}
+
                   {/* Live Dragging Rectangle for Whiteout or Highlight */}
-                  {isDrawingRect && currentRect && (
+                  {isDrawingRect && (activeTool === 'whiteout' || activeTool === 'highlight') && currentRect && (
                     <rect
                       x={currentRect.x}
                       y={currentRect.y}

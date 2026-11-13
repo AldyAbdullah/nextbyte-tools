@@ -55,7 +55,30 @@ interface ToolPageProps {
 
 export function generateStaticParams() {
   return TOOLS_REGISTRY.filter(
-    (tool) => !['qr-code-generator', 'barcode-generator', 'mail-merge', 'word-page-number', 'caption-generator', 'image-compressor', 'image-sharpener', 'image-background-remover', 'send', 'receive', 'clipboard', 'clip', 'pdf-editor', 'merge-pdf'].includes(tool.slug)
+    (tool) =>
+      ![
+        'qr-code-generator',
+        'barcode-generator',
+        'mail-merge',
+        'word-page-number',
+        'caption-generator',
+        'image-compressor',
+        'image-sharpener',
+        'image-background-remover',
+        'send',
+        'receive',
+        'clipboard',
+        'clip',
+        'pdf-editor',
+        'merge-pdf',
+        'split-pdf',
+        'compress-pdf',
+        'image-to-pdf',
+        'pdf-to-image',
+        'password-generator',
+        'json-formatter',
+        'image-converter',
+      ].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
   }));
@@ -77,45 +100,26 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   const { slug } = await params;
 
   // Redirect ke halaman khusus tool yang tersedia
-  if (slug === 'merge-pdf') {
-    redirect('/tools/merge-pdf');
-  }
-  if (slug === 'pdf-editor') {
-    redirect('/tools/pdf-editor');
-  }
-  if (slug === 'qr-code-generator') {
-    redirect('/tools/qr-code-generator');
-  }
-  if (slug === 'barcode-generator') {
-    redirect('/tools/barcode-generator');
-  }
-  if (slug === 'mail-merge') {
-    redirect('/tools/mail-merge');
-  }
-  if (slug === 'word-page-number') {
-    redirect('/tools/word-page-number');
-  }
-  if (slug === 'caption-generator') {
-    redirect('/tools/caption-generator');
-  }
-  if (slug === 'image-compressor') {
-    redirect('/tools/image-compressor');
-  }
-  if (slug === 'image-sharpener') {
-    redirect('/tools/image-sharpener');
-  }
-  if (slug === 'image-background-remover') {
-    redirect('/tools/image-background-remover');
-  }
-  if (slug === 'send') {
-    redirect('/send');
-  }
-  if (slug === 'clip' || slug === 'clipboard') {
-    redirect('/clip');
-  }
-  if (slug === 'receive') {
-    redirect('/receive');
-  }
+  if (slug === 'merge-pdf') redirect('/tools/merge-pdf');
+  if (slug === 'split-pdf') redirect('/tools/split-pdf');
+  if (slug === 'compress-pdf') redirect('/tools/compress-pdf');
+  if (slug === 'image-to-pdf') redirect('/tools/image-to-pdf');
+  if (slug === 'pdf-to-image') redirect('/tools/pdf-to-image');
+  if (slug === 'password-generator') redirect('/tools/password-generator');
+  if (slug === 'json-formatter') redirect('/tools/json-formatter');
+  if (slug === 'image-converter') redirect('/tools/image-converter');
+  if (slug === 'pdf-editor') redirect('/tools/pdf-editor');
+  if (slug === 'qr-code-generator') redirect('/tools/qr-code-generator');
+  if (slug === 'barcode-generator') redirect('/tools/barcode-generator');
+  if (slug === 'mail-merge') redirect('/tools/mail-merge');
+  if (slug === 'word-page-number') redirect('/tools/word-page-number');
+  if (slug === 'caption-generator') redirect('/tools/caption-generator');
+  if (slug === 'image-compressor') redirect('/tools/image-compressor');
+  if (slug === 'image-sharpener') redirect('/tools/image-sharpener');
+  if (slug === 'image-background-remover') redirect('/tools/image-background-remover');
+  if (slug === 'send') redirect('/send');
+  if (slug === 'clip' || slug === 'clipboard') redirect('/clip');
+  if (slug === 'receive') redirect('/receive');
 
   const tool = TOOLS_REGISTRY.find((t) => t.slug === slug);
 
