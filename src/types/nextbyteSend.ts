@@ -70,4 +70,12 @@ export interface SignalingMessage {
   reason?: string;
 }
 
+export interface SavedContact {
+  id: string;
+  name: string;
+  pin: string;
+  lastUsed?: number;
+}
+
+
 export type StorageMode = 'stream-disk' | 'memory-blob';

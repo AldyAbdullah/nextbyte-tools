@@ -21,6 +21,7 @@ import {
   TransferStatus,
   TransferMetrics,
   LocalPeer,
+  SavedContact,
 } from '@/types/nextbyteSend';
 import {
   formatBytes,
@@ -51,10 +52,27 @@ export function SendStudio() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrContainerRef = useRef<HTMLDivElement>(null);
 
-  // 4-digit PIN belonging strictly to THIS device (never overwritten by another device's PIN)
-  const [myPin, setMyPin] = useState<string>(() =>
-    Math.floor(1000 + Math.random() * 9000).toString()
-  );
+  // PIN or persistent Custom ID belonging strictly to THIS device (never overwritten by another device's PIN)
+  const [myPin, setMyPin] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('nextbyte_custom_room_id');
+        if (saved && saved.trim()) return saved.trim().toUpperCase();
+      } catch {}
+    }
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  });
+
+  // Saved Contacts / Devices
+  const [savedContacts, setSavedContacts] = useState<SavedContact[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('nextbyte_saved_contacts');
+        if (raw) return JSON.parse(raw);
+      } catch {}
+    }
+    return [];
+  });
 
   // Target PIN if this device is connecting to another device (e.g. from URL ?pin= or scanner)
   const [connectedPin, setConnectedPin] = useState<string | null>(null);
@@ -1067,6 +1085,74 @@ export function SendStudio() {
     [handleJoinPin]
   );
 
+  // Custom Room / Permanent Device ID Handlers
+  const handleSaveCustomPin = useCallback(
+    (customId: string) => {
+      const clean = customId.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+      if (clean.length < 3) {
+        showToast('ID kustom minimal 3 karakter alfanumerik.', 'error');
+        return;
+      }
+      try {
+        localStorage.setItem('nextbyte_custom_room_id', clean);
+      } catch {}
+      setMyPin(clean);
+      showToast(`ID Tetap berhasil disimpan: ${clean}`, 'success');
+    },
+    [showToast]
+  );
+
+  const handleResetCustomPin = useCallback(() => {
+    try {
+      localStorage.removeItem('nextbyte_custom_room_id');
+    } catch {}
+    const newRandom = Math.floor(1000 + Math.random() * 9000).toString();
+    setMyPin(newRandom);
+    showToast(`ID direset ke PIN acak: ${newRandom}`, 'info');
+  }, [showToast]);
+
+  // Saved Contacts Handlers
+  const handleSaveContact = useCallback(
+    (name: string, pin: string) => {
+      const cleanPin = pin.trim().toUpperCase();
+      const cleanName = name.trim();
+      if (!cleanPin || !cleanName) return;
+
+      setSavedContacts((prev) => {
+        const filtered = prev.filter((c) => c.pin !== cleanPin);
+        const updated = [
+          {
+            id: `contact_${Date.now()}`,
+            name: cleanName,
+            pin: cleanPin,
+            lastUsed: Date.now(),
+          },
+          ...filtered,
+        ];
+        try {
+          localStorage.setItem('nextbyte_saved_contacts', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+      showToast(`Kontak "${cleanName}" (${cleanPin}) disimpan!`, 'success');
+    },
+    [showToast]
+  );
+
+  const handleRemoveContact = useCallback(
+    (contactId: string) => {
+      setSavedContacts((prev) => {
+        const updated = prev.filter((c) => c.id !== contactId);
+        try {
+          localStorage.setItem('nextbyte_saved_contacts', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+      showToast('Kontak dihapus.', 'info');
+    },
+    [showToast]
+  );
+
   // Auto connect when URL has pin parameter
   useEffect(() => {
     if (connectedPin && peerInstanceRef.current && !peerInstanceRef.current.destroyed) {
@@ -1173,6 +1259,11 @@ export function SendStudio() {
           onShowQr={() => setShowQrModal(true)}
           onOpenScanner={() => setShowCameraScanner(true)}
           onJoinPin={handleJoinPin}
+          savedContacts={savedContacts}
+          onSaveContact={handleSaveContact}
+          onRemoveContact={handleRemoveContact}
+          onSaveCustomPin={handleSaveCustomPin}
+          onResetCustomPin={handleResetCustomPin}
         />
       )}
 

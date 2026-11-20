@@ -118,7 +118,10 @@ export function PdfEditorStudio() {
 
   // Sidebar
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [thumbnailUrls, setThumbnailUrls] = useState<Record<number, string>>({});
+  const [thumbnailUrls, setThumbnailUrls] = useState<{ docId: string; thumbs: Record<number, string> }>({
+    docId: '',
+    thumbs: {},
+  });
 
   // Annotations & Modifications
   const [annotations, setAnnotations] = useState<PdfAnnotationItem[]>([]);
@@ -186,7 +189,7 @@ export function PdfEditorStudio() {
       }
 
       // Immediately clear thumbnails & selections
-      setThumbnailUrls({});
+      setThumbnailUrls({ docId: '', thumbs: {} });
       setSelectedAnnotationId(null);
       setAnnotations([]);
       setHistory([]);
@@ -348,7 +351,7 @@ export function PdfEditorStudio() {
     const activeDocId = docId;
 
     // Immediately clear stale thumbnails when switching file or rotating
-    setThumbnailUrls({});
+    setThumbnailUrls({ docId: '', thumbs: {} });
 
     async function loadThumbnails() {
       if (!doc || isCancelled) return;
@@ -373,7 +376,7 @@ export function PdfEditorStudio() {
       }
 
       if (!isCancelled && docId === activeDocId) {
-        setThumbnailUrls(newThumbs);
+        setThumbnailUrls({ docId: activeDocId, thumbs: newThumbs });
       }
     }
 
@@ -1422,11 +1425,12 @@ export function PdfEditorStudio() {
                     (pageIdx, displayPos) => {
                       if (deletedPages.includes(pageIdx)) return null;
                       const isActive = currentPage === pageIdx;
-                      const thumbUrl = thumbnailUrls[pageIdx];
+                      const thumbUrl =
+                        thumbnailUrls.docId === docId ? thumbnailUrls.thumbs[pageIdx] : undefined;
 
                       return (
                         <div
-                          key={pageIdx}
+                          key={`${docId}_page_${pageIdx}`}
                           onClick={() => {
                             setCurrentPage(pageIdx);
                             setSelectedAnnotationId(null);
@@ -1442,6 +1446,7 @@ export function PdfEditorStudio() {
                             {thumbUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
+                                key={`${docId}_thumb_${pageIdx}`}
                                 src={thumbUrl}
                                 alt={`Thumbnail Hal ${pageIdx + 1}`}
                                 className="w-full h-full object-contain"

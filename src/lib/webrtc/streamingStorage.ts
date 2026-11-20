@@ -30,6 +30,7 @@ export function createFileReceiverHandle(
     finish: () => {
       const mime = fileType || 'application/octet-stream';
       const blob = new Blob(chunks, { type: mime });
+      chunks.length = 0; // Release memory references immediately to avoid mobile RAM crashes
       const url = URL.createObjectURL(blob);
 
       return {
