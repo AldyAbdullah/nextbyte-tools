@@ -29,6 +29,7 @@ import {
   Scissors,
   KeyRound,
   FileCode2,
+  Briefcase,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { SearchModal } from '@/components/common/SearchModal';
@@ -219,6 +220,15 @@ const TOOL_CATEGORIES: NavCategory[] = [
         badge: 'Baru',
         iconColor: 'text-violet-600 dark:text-violet-400',
         iconBg: 'bg-violet-50 dark:bg-violet-950/60',
+      },
+      {
+        name: 'AI Job Vacancy Finder',
+        href: '/tools/ai-job-finder',
+        desc: 'Cari lowongan kerja live via Gemini AI & Search Grounding',
+        icon: Briefcase,
+        badge: 'Eksklusif',
+        iconColor: 'text-indigo-600 dark:text-indigo-400',
+        iconBg: 'bg-indigo-50 dark:bg-indigo-950/60',
       },
     ],
   },

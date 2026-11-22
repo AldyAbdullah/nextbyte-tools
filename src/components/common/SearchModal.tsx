@@ -26,6 +26,7 @@ import {
   FileEdit,
   Layers,
   Scissors,
+  Briefcase,
   Star,
   Clock,
 } from 'lucide-react';
@@ -54,6 +55,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileEdit,
   Layers,
   Scissors,
+  Briefcase,
 };
 
 interface SearchModalProps {

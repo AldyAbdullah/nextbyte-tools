@@ -116,7 +116,19 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     {
+      url: `${baseUrl}/tools/ai-job-finder`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
       url: `${baseUrl}/send`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/clip`,
       lastModified: currentDate,
       changeFrequency: 'daily',
       priority: 1.0,
@@ -164,6 +176,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
         'password-generator',
         'json-formatter',
         'image-converter',
+        'ai-job-finder',
+        'clip',
       ].includes(tool.slug)
   ).map((tool) => ({
     url: `${baseUrl}/tools/${tool.slug}`,

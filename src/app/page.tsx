@@ -31,6 +31,8 @@ import {
   Clock,
   Scissors,
   FileEdit,
+  Briefcase,
+  Clipboard,
 } from 'lucide-react';
 import { TOOLS_REGISTRY, TOOL_CATEGORIES } from '@/config/tools';
 import { ToolCategory, ToolItem } from '@/types/tools';
@@ -56,6 +58,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Scissors,
   FileEdit,
   Layers,
+  Briefcase,
+  Clipboard,
 };
 
 export default function HomePage() {

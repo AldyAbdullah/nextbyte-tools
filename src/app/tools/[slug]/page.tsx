@@ -24,7 +24,8 @@ import {
   Share2,
   Mail,
   ListOrdered,
-  Eraser
+  Eraser,
+  Briefcase
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -45,6 +46,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Type,
   AlignLeft,
   Clipboard,
+  Briefcase,
 };
 
 interface ToolPageProps {
@@ -78,6 +80,7 @@ export function generateStaticParams() {
         'password-generator',
         'json-formatter',
         'image-converter',
+        'ai-job-finder',
       ].includes(tool.slug)
   ).map((tool) => ({
     slug: tool.slug,
@@ -120,6 +123,7 @@ export default async function DynamicToolPage({ params }: ToolPageProps) {
   if (slug === 'send') redirect('/send');
   if (slug === 'clip' || slug === 'clipboard') redirect('/clip');
   if (slug === 'receive') redirect('/receive');
+  if (slug === 'ai-job-finder') redirect('/tools/ai-job-finder');
 
   const tool = TOOLS_REGISTRY.find((t) => t.slug === slug);
 

@@ -50,6 +50,18 @@ export const TOOLS_REGISTRY: ToolItem[] = [
     tags: ['clipboard', 'cl1p', 'pastebin', 'temp url', 'share text', 'share image', 'teks', 'gambar', 'catatan']
   },
   {
+    id: 'ai-job-finder',
+    name: 'AI Job Vacancy Finder',
+    slug: 'ai-job-finder',
+    description: 'Temukan lowongan kerja nyata & terverifikasi di Indonesia via Google Search Grounding & Gemini AI pribadi, lengkap dengan tips seleksi dan generator surat lamaran.',
+    category: 'Utility',
+    status: 'available',
+    iconName: 'Briefcase',
+    featured: true,
+    badge: 'Eksklusif',
+    tags: ['loker', 'lowongan kerja', 'job finder', 'karir', 'gemini ai', 'surat lamaran', 'cover letter', 'cv']
+  },
+  {
     id: 'mail-merge',
     name: 'Word Mail Merge',
     slug: 'mail-merge',
