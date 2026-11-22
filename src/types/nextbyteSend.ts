@@ -77,5 +77,14 @@ export interface SavedContact {
   lastUsed?: number;
 }
 
+export interface TransferHistoryItem {
+  id: string;
+  timestamp: number;
+  direction: 'sent' | 'received';
+  peerName: string;
+  fileNames: string[];
+  totalSize: number;
+  status: 'success' | 'cancelled' | 'error';
+}
 
 export type StorageMode = 'stream-disk' | 'memory-blob';

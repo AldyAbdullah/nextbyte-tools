@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/context/ThemeContext';
 import { ToastProvider } from '@/components/common/Toast';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
+import { ToolUsageTracker } from '@/components/common/ToolUsageTracker';
 import { Analytics } from '@vercel/analytics/react';
 
 const geistSans = Geist({
@@ -96,6 +97,7 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100 transition-colors`}>
         <ThemeProvider>
           <ToastProvider>
+            <ToolUsageTracker />
             <Navbar />
             <main className="flex-1">
               {children}

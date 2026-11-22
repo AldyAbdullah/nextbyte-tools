@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
@@ -26,10 +26,15 @@ import {
   Share2,
   Mail,
   ListOrdered,
-  Eraser
+  Eraser,
+  Star,
+  Clock,
+  Scissors,
+  FileEdit,
 } from 'lucide-react';
 import { TOOLS_REGISTRY, TOOL_CATEGORIES } from '@/config/tools';
-import { ToolCategory } from '@/types/tools';
+import { ToolCategory, ToolItem } from '@/types/tools';
+import { getRecentTools, getFavoriteTools, toggleFavoriteTool } from '@/lib/userPreferences';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   QrCode,
@@ -48,11 +53,44 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Binary,
   Type,
   AlignLeft,
+  Scissors,
+  FileEdit,
+  Layers,
 };
 
 export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ToolCategory>('All');
+  const [favoriteSlugs, setFavoriteSlugs] = useState<string[]>([]);
+  const [recentSlugs, setRecentSlugs] = useState<string[]>([]);
+
+  useEffect(() => {
+    setFavoriteSlugs(getFavoriteTools());
+    setRecentSlugs(getRecentTools());
+
+    const handleFavUpdate = () => setFavoriteSlugs(getFavoriteTools());
+    const handleRecentUpdate = () => setRecentSlugs(getRecentTools());
+
+    window.addEventListener('nextbyte_favorite_tools_updated', handleFavUpdate);
+    window.addEventListener('nextbyte_recent_tools_updated', handleRecentUpdate);
+
+    return () => {
+      window.removeEventListener('nextbyte_favorite_tools_updated', handleFavUpdate);
+      window.removeEventListener('nextbyte_recent_tools_updated', handleRecentUpdate);
+    };
+  }, []);
+
+  const handleToggleFavorite = (slug: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleFavoriteTool(slug);
+  };
+
+  const getToolUrl = (tool: ToolItem) => {
+    if (tool.slug === 'send') return '/send';
+    if (tool.slug === 'clip' || tool.slug === 'clipboard') return '/clip';
+    return `/tools/${tool.slug}`;
+  };
 
   const filteredTools = TOOLS_REGISTRY.filter((tool) => {
     const matchesCategory = selectedCategory === 'All' || tool.category === selectedCategory;
@@ -66,6 +104,14 @@ export default function HomePage() {
 
   const availableTools = filteredTools.filter((t) => t.status === 'available');
   const comingSoonTools = filteredTools.filter((t) => t.status === 'coming-soon');
+
+  const favoriteTools = favoriteSlugs
+    .map((slug) => TOOLS_REGISTRY.find((t) => t.slug === slug))
+    .filter((t): t is ToolItem => Boolean(t));
+
+  const recentTools = recentSlugs
+    .map((slug) => TOOLS_REGISTRY.find((t) => t.slug === slug))
+    .filter((t): t is ToolItem => Boolean(t));
 
   return (
     <div className="space-y-16 pb-20">
@@ -239,8 +285,84 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Recently Used Quick Bar */}
+        {recentTools.length > 0 && selectedCategory === 'All' && !searchQuery && (
+          <div className="pt-4 flex items-center gap-2 flex-wrap animate-in fade-in">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">
+              <Clock className="w-3.5 h-3.5 text-blue-500" />
+              <span>Terakhir Digunakan:</span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {recentTools.slice(0, 5).map((tool) => (
+                <Link
+                  key={`home-recent-${tool.id}`}
+                  href={getToolUrl(tool)}
+                  className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-slate-100 hover:bg-blue-50 dark:bg-slate-800/80 dark:hover:bg-blue-950/60 text-slate-700 hover:text-blue-600 dark:text-slate-300 dark:hover:text-blue-300 text-xs font-semibold border border-slate-200/80 dark:border-slate-700 transition-all"
+                >
+                  <span>{tool.name}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Tools Grid: Available Tools First */}
         <div className="pt-8 space-y-10">
+
+          {/* Section: Favorite Tools (Pinned) */}
+          {favoriteTools.length > 0 && selectedCategory === 'All' && !searchQuery && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Alat Favorit Anda ({favoriteTools.length})
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {favoriteTools.map((tool) => {
+                  const Icon = ICON_MAP[tool.iconName] || QrCode;
+                  return (
+                    <Link
+                      key={`fav-${tool.id}`}
+                      href={getToolUrl(tool)}
+                      className="p-6 rounded-3xl bg-amber-50/20 dark:bg-amber-950/10 border-2 border-amber-300/80 dark:border-amber-700/60 shadow-xl shadow-amber-500/5 hover:shadow-amber-500/10 transition-all flex flex-col justify-between group"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-100/70 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-300 dark:border-amber-800">
+                            <Icon className="w-6 h-6" />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleFavorite(tool.slug, e)}
+                            title="Hapus dari Favorit"
+                            className="p-1.5 rounded-xl border bg-amber-50 dark:bg-amber-950/80 border-amber-300 dark:border-amber-700 text-amber-500 transition-all"
+                          >
+                            <Star className="w-4 h-4 fill-amber-500" />
+                          </button>
+                        </div>
+
+                        <div>
+                          <h5 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                            {tool.name}
+                          </h5>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                            {tool.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-amber-200/50 dark:border-amber-900/50 flex items-center justify-between text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        <span>Buka Alat Favorit</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           
           {/* Section A: Ready to Use (Available) */}
           {availableTools.length > 0 && (
@@ -255,10 +377,12 @@ export default function HomePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {availableTools.map((tool) => {
                   const Icon = ICON_MAP[tool.iconName] || QrCode;
+                  const isFav = favoriteSlugs.includes(tool.slug);
+
                   return (
                     <Link
                       key={tool.id}
-                      href={`/tools/${tool.slug}`}
+                      href={getToolUrl(tool)}
                       className="p-6 rounded-3xl bg-white dark:bg-slate-900 border-2 border-blue-500/30 hover:border-blue-500 dark:hover:border-blue-400 shadow-xl shadow-blue-500/5 hover:shadow-blue-500/10 transition-all flex flex-col justify-between group"
                     >
                       <div className="space-y-4">
@@ -266,9 +390,23 @@ export default function HomePage() {
                           <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-900/60">
                             <Icon className="w-6 h-6" />
                           </div>
-                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
-                            Available
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleFavorite(tool.slug, e)}
+                              title={isFav ? 'Hapus dari favorit' : 'Sematkan ke favorit'}
+                              className={`p-1.5 rounded-xl border transition-all ${
+                                isFav
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-500 shadow-sm'
+                                  : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-amber-500'
+                              }`}
+                            >
+                              <Star className={`w-4 h-4 ${isFav ? 'fill-amber-500' : ''}`} />
+                            </button>
+                            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
+                              Available
+                            </span>
+                          </div>
                         </div>
 
                         <div>
@@ -305,10 +443,12 @@ export default function HomePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {comingSoonTools.map((tool) => {
                   const Icon = ICON_MAP[tool.iconName] || FileCode2;
+                  const isFav = favoriteSlugs.includes(tool.slug);
+
                   return (
                     <Link
                       key={tool.id}
-                      href={`/tools/${tool.slug}`}
+                      href={getToolUrl(tool)}
                       className="p-6 rounded-3xl bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col justify-between group"
                     >
                       <div className="space-y-4">
@@ -316,9 +456,23 @@ export default function HomePage() {
                           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 flex items-center justify-center border border-slate-200 dark:border-slate-700">
                             <Icon className="w-6 h-6" />
                           </div>
-                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                            Coming Soon
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleFavorite(tool.slug, e)}
+                              title={isFav ? 'Hapus dari favorit' : 'Sematkan ke favorit'}
+                              className={`p-1.5 rounded-xl border transition-all ${
+                                isFav
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-500 shadow-sm'
+                                  : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-amber-500'
+                              }`}
+                            >
+                              <Star className={`w-4 h-4 ${isFav ? 'fill-amber-500' : ''}`} />
+                            </button>
+                            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                              Coming Soon
+                            </span>
+                          </div>
                         </div>
 
                         <div>

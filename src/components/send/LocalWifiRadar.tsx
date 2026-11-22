@@ -22,8 +22,13 @@ import {
   Trash2,
   X,
   Plus,
+  Folder,
+  History,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { LocalPeer, SavedContact } from '@/types/nextbyteSend';
+import { soundManager } from '@/lib/webrtc/audioChimes';
 
 interface LocalWifiRadarProps {
   myPeer: LocalPeer | null;
@@ -33,6 +38,7 @@ interface LocalWifiRadarProps {
   isConnectingPin?: string | null;
   onCancelConnectingPin?: () => void;
   onSelectPeer: (peer: LocalPeer) => void;
+  onSelectPeerFolder?: (peer: LocalPeer) => void;
   onSelectMultiplePeers: (peers: LocalPeer[]) => void;
   onOpenSendTextModal: (targetPeers: LocalPeer[]) => void;
   onShowQr: () => void;
@@ -43,6 +49,8 @@ interface LocalWifiRadarProps {
   onRemoveContact?: (contactId: string) => void;
   onSaveCustomPin?: (customId: string) => void;
   onResetCustomPin?: () => void;
+  historyCount?: number;
+  onOpenHistory?: () => void;
 }
 
 export function LocalWifiRadar({
@@ -53,6 +61,7 @@ export function LocalWifiRadar({
   isConnectingPin,
   onCancelConnectingPin,
   onSelectPeer,
+  onSelectPeerFolder,
   onSelectMultiplePeers,
   onOpenSendTextModal,
   onShowQr,
@@ -63,6 +72,8 @@ export function LocalWifiRadar({
   onRemoveContact,
   onSaveCustomPin,
   onResetCustomPin,
+  historyCount = 0,
+  onOpenHistory,
 }: LocalWifiRadarProps) {
   const [pinInput, setPinInput] = useState('');
   const [selectedPeerIds, setSelectedPeerIds] = useState<string[]>([]);
@@ -71,6 +82,13 @@ export function LocalWifiRadar({
   const [showSaveContactModal, setShowSaveContactModal] = useState(false);
   const [contactNameInput, setContactNameInput] = useState('');
   const [contactPinInput, setContactPinInput] = useState('');
+  const [soundEnabled, setSoundEnabled] = useState(soundManager.getSoundEnabled());
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    soundManager.setSoundEnabled(next);
+    setSoundEnabled(next);
+  };
 
   const getDeviceIcon = (type: LocalPeer['deviceType'], className = 'w-6 h-6') => {
     switch (type) {
@@ -140,7 +158,7 @@ export function LocalWifiRadar({
           </div>
         </div>
 
-        {/* Pairing Actions: PIN Badge + Scan Camera + Show QR */}
+        {/* Pairing Actions: PIN Badge + Scan Camera + Show QR + History + Sound */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
             <span className="text-slate-400 font-sans font-medium text-[11px]">PIN / ID Anda:</span>
@@ -179,7 +197,35 @@ export function LocalWifiRadar({
             title="Tampilkan QR Code perangkat ini agar bisa discan dari HP"
           >
             <QrCode className="w-3.5 h-3.5 shrink-0" />
-            <span>Tampilkan QR</span>
+            <span className="hidden sm:inline">Tampilkan QR</span>
+          </button>
+
+          {/* Button to open Transfer History */}
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-700 transition-all shrink-0"
+              title="Lihat riwayat pengiriman & penerimaan berkas"
+            >
+              <History className="w-3.5 h-3.5 shrink-0" />
+              <span>Riwayat</span>
+              {historyCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                  {historyCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Sound Mute/Unmute Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleSound}
+            title={soundEnabled ? 'Efek suara aktif (klik untuk membisukan)' : 'Efek suara dibisukan (klik untuk menyalakan)'}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-all shrink-0"
+          >
+            {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5 text-slate-400" />}
           </button>
         </div>
       </div>
@@ -298,15 +344,26 @@ export function LocalWifiRadar({
                       </div>
                     </div>
 
-                    <div className="pt-1 border-t border-slate-100 dark:border-slate-800 flex items-center justify-center gap-2">
+                    <div className="pt-1 border-t border-slate-100 dark:border-slate-800 flex items-center justify-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => onSelectPeer(peer)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/80 dark:hover:bg-blue-900/80 text-blue-600 dark:text-blue-400 text-xs font-bold transition-colors w-full justify-center"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/80 dark:hover:bg-blue-900/80 text-blue-600 dark:text-blue-400 text-xs font-bold transition-colors flex-1 justify-center"
+                        title="Kirim satu atau banyak berkas"
                       >
                         <Send className="w-3.5 h-3.5" />
-                        Kirim Berkas
+                        Berkas
                       </button>
+                      {onSelectPeerFolder && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectPeerFolder(peer)}
+                          className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold transition-colors shrink-0"
+                          title="Kirim seluruh folder"
+                        >
+                          <Folder className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => onOpenSendTextModal([peer])}

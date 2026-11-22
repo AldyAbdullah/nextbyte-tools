@@ -22,16 +22,20 @@ import {
   TransferMetrics,
   LocalPeer,
   SavedContact,
+  TransferHistoryItem,
 } from '@/types/nextbyteSend';
 import {
   formatBytes,
   getDeviceInfo,
   getFriendlyDeviceName,
 } from '@/lib/webrtc/deviceDetection';
+import { soundManager } from '@/lib/webrtc/audioChimes';
+import { screenWakeLock } from '@/lib/webrtc/wakeLock';
 import { LocalWifiRadar } from './LocalWifiRadar';
 import { IncomingTransferModal } from './IncomingTransferModal';
 import { TransferProgressCard } from './TransferProgressCard';
 import { CameraScannerModal } from './CameraScannerModal';
+import { TransferHistoryModal } from './TransferHistoryModal';
 import { createFileReceiverHandle, FileReceiverHandle, FileReceiverResult } from '@/lib/webrtc/streamingStorage';
 import { useToast } from '@/components/common/Toast';
 
@@ -50,7 +54,20 @@ export function SendStudio() {
   const { showToast } = useToast();
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const qrContainerRef = useRef<HTMLDivElement>(null);
+
+  // Transfer History
+  const [transferHistory, setTransferHistory] = useState<TransferHistoryItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('nextbyte_send_history');
+        if (raw) return JSON.parse(raw);
+      } catch {}
+    }
+    return [];
+  });
+  const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
 
   // PIN or persistent Custom ID belonging strictly to THIS device (never overwritten by another device's PIN)
   const [myPin, setMyPin] = useState<string>(() => {
@@ -119,6 +136,7 @@ export function SendStudio() {
     files: Array<{ id: string; name: string; size: number; type: string }>;
     totalBytes: number;
   } | null>(null);
+  const incomingSenderNameRef = useRef<string>('');
 
   const [status, setStatus] = useState<TransferStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -282,7 +300,9 @@ export function SendStudio() {
 
         case 'TRANSFER_REQUEST': {
           setShowQrModal(false);
+          soundManager.playIncoming();
           activeConnRef.current = conn;
+          incomingSenderNameRef.current = data.senderName || 'Perangkat Pengirim';
           expectedTotalBytesRef.current = data.totalBytes || 0;
           receiverBytesRef.current = 0;
           receivedMetadataRef.current = data.files || [];
@@ -427,10 +447,29 @@ export function SendStudio() {
             timeRemainingSec: 0,
           }));
           setStatus('completed');
+          soundManager.playSuccess();
           try {
             confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
           } catch {}
           showToast('Seluruh berkas berhasil diterima!', 'success');
+
+          // Record receiver transfer history
+          const rxItem: TransferHistoryItem = {
+            id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            timestamp: Date.now(),
+            direction: 'received',
+            peerName: incomingSenderNameRef.current || 'Pengirim',
+            fileNames: receivedMetadataRef.current.map((f) => f.name),
+            totalSize: expectedTotalBytesRef.current,
+            status: 'success',
+          };
+          setTransferHistory((prev) => {
+            const updated = [rxItem, ...prev].slice(0, 30);
+            try {
+              localStorage.setItem('nextbyte_send_history', JSON.stringify(updated));
+            } catch {}
+            return updated;
+          });
           break;
         }
 
@@ -663,11 +702,36 @@ export function SendStudio() {
         }
       }
       setStatus('completed');
+      soundManager.playSuccess();
       try {
         confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
       } catch {}
       showToast('Seluruh berkas berhasil dikirimkan!', 'success');
+
+      // Record sender transfer history
+      const filesSent = filesToSendRef.current;
+      const targetName =
+        targetPeersRef.current.length > 1
+          ? `${targetPeersRef.current.length} Perangkat (${targetPeersRef.current.map((p) => p.name).join(', ')})`
+          : targetPeerRef.current?.name || targetPeersRef.current[0]?.name || 'Penerima';
+      const txItem: TransferHistoryItem = {
+        id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: Date.now(),
+        direction: 'sent',
+        peerName: targetName,
+        fileNames: filesSent.map((f) => f.name),
+        totalSize: filesSent.reduce((acc, f) => acc + f.size, 0),
+        status: 'success',
+      };
+      setTransferHistory((prev) => {
+        const updated = [txItem, ...prev].slice(0, 30);
+        try {
+          localStorage.setItem('nextbyte_send_history', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
     } catch (err: unknown) {
+      soundManager.playError();
       if (!isCancelledRef.current) {
         const errText = err instanceof Error ? err.message : 'Koneksi transfer terputus.';
         setErrorMessage(errText);
@@ -683,22 +747,14 @@ export function SendStudio() {
 
   // Screen WakeLock to prevent mobile device from sleeping during transfer
   useEffect(() => {
-    if (typeof window === 'undefined' || !('wakeLock' in navigator)) return;
-
-    if (status === 'transferring') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (navigator as any).wakeLock
-        ?.request('screen')
-        .then((wl: WakeLockSentinelLike) => {
-          wakeLockRef.current = wl;
-        })
-        .catch(() => {});
+    if (status === 'transferring' || status === 'waiting_for_receiver') {
+      screenWakeLock.request();
     } else {
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release().catch(() => {});
-        wakeLockRef.current = null;
-      }
+      screenWakeLock.release();
     }
+    return () => {
+      screenWakeLock.release();
+    };
   }, [status]);
 
   // Automatic Wi-Fi Local Peer Discovery Heartbeat
@@ -794,6 +850,27 @@ export function SendStudio() {
     }
   };
 
+  // User clicks to send an entire folder to target peer
+  const handleSelectPeerFolderToTarget = (peer: LocalPeer) => {
+    targetPeerRef.current = peer;
+    setTargetPeer(peer);
+    targetPeersRef.current = [peer];
+    setTargetPeers([peer]);
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+      folderInputRef.current.click();
+    }
+  };
+
+  // Clear transfer history
+  const handleClearHistory = useCallback(() => {
+    setTransferHistory([]);
+    try {
+      localStorage.removeItem('nextbyte_send_history');
+    } catch {}
+    showToast('Riwayat transfer berhasil dibersihkan.', 'info');
+  }, [showToast]);
+
   // User selects multiple peers for broadcast
   const handleSelectMultiplePeersToTarget = (peers: LocalPeer[]) => {
     if (peers.length === 0) return;
@@ -871,7 +948,7 @@ export function SendStudio() {
 
     const fileItems: FileTransferItem[] = Array.from(selected).map((f) => ({
       id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      name: f.name,
+      name: (f as unknown as { webkitRelativePath?: string }).webkitRelativePath || f.name,
       size: f.size,
       type: f.type,
       file: f,
@@ -1226,6 +1303,25 @@ export function SendStudio() {
         id="send-studio-file-input"
       />
 
+      {/* Hidden Folder Picker */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as unknown as React.InputHTMLAttributes<HTMLInputElement>)}
+        onChange={handleFileChange}
+        className="hidden"
+        id="send-studio-folder-input"
+      />
+
+      {/* Transfer History Modal */}
+      <TransferHistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        history={transferHistory}
+        onClearHistory={handleClearHistory}
+      />
+
       {/* Incoming Transfer Prompt Modal */}
       {incomingRequest && (
         <IncomingTransferModal
@@ -1254,6 +1350,7 @@ export function SendStudio() {
           isConnectingPin={isConnectingPin}
           onCancelConnectingPin={handleCancelConnectingPin}
           onSelectPeer={handleSelectPeerToTarget}
+          onSelectPeerFolder={handleSelectPeerFolderToTarget}
           onSelectMultiplePeers={handleSelectMultiplePeersToTarget}
           onOpenSendTextModal={handleOpenSendTextModal}
           onShowQr={() => setShowQrModal(true)}
@@ -1264,6 +1361,8 @@ export function SendStudio() {
           onRemoveContact={handleRemoveContact}
           onSaveCustomPin={handleSaveCustomPin}
           onResetCustomPin={handleResetCustomPin}
+          historyCount={transferHistory.length}
+          onOpenHistory={() => setShowHistoryModal(true)}
         />
       )}
 

@@ -1,9 +1,11 @@
 'use client';
 
-import React from 'react';
-import { Zap, Clock, HardDrive, File, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Zap, Clock, HardDrive, File, XCircle, Sun, Volume2, VolumeX } from 'lucide-react';
 import { TransferMetrics } from '@/types/nextbyteSend';
 import { formatBytes, formatTimeRemaining } from '@/lib/webrtc/deviceDetection';
+import { soundManager } from '@/lib/webrtc/audioChimes';
+import { screenWakeLock } from '@/lib/webrtc/wakeLock';
 
 interface TransferProgressCardProps {
   metrics: TransferMetrics;
@@ -17,6 +19,21 @@ export function TransferProgressCard({
   title = 'Sedang Mentransfer Berkas...',
 }: TransferProgressCardProps) {
   const isConnecting = title.toLowerCase().includes('menyiapkan');
+  const [soundEnabled, setSoundEnabled] = useState(soundManager.getSoundEnabled());
+  const [wakeLockActive, setWakeLockActive] = useState(screenWakeLock.isActive());
+
+  useEffect(() => {
+    const handleSoundChange = () => setSoundEnabled(soundManager.getSoundEnabled());
+    window.addEventListener('nextbyte_send_sound_changed', handleSoundChange);
+    setWakeLockActive(screenWakeLock.isActive());
+    return () => window.removeEventListener('nextbyte_send_sound_changed', handleSoundChange);
+  }, []);
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    soundManager.setSoundEnabled(next);
+    setSoundEnabled(next);
+  };
 
   return (
     <div className="w-full max-w-full overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-7 shadow-xl space-y-5 sm:space-y-6 animate-in fade-in duration-300">
@@ -27,9 +44,17 @@ export function TransferProgressCard({
             <Zap className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse shrink-0" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-lg truncate leading-tight">
-              {title}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-lg truncate leading-tight">
+                {title}
+              </h3>
+              {wakeLockActive && (
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-[10px] font-semibold text-amber-700 dark:text-amber-300 shrink-0">
+                  <Sun className="w-2.5 h-2.5 animate-spin" />
+                  Layar Tetap Aktif
+                </span>
+              )}
+            </div>
             <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
               {metrics.totalFiles > 0 ? (
                 <>
@@ -45,14 +70,25 @@ export function TransferProgressCard({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onCancel}
-          className="shrink-0 inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 text-xs font-semibold transition-colors"
-        >
-          <XCircle className="w-3.5 h-3.5 shrink-0" />
-          <span>Batal</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={toggleSound}
+            title={soundEnabled ? 'Suara aktif (klik untuk membisukan)' : 'Suara dibisukan (klik untuk menyalakan)'}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+          >
+            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 text-xs font-semibold transition-colors"
+          >
+            <XCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>Batal</span>
+          </button>
+        </div>
       </div>
 
       {/* Big Progress Bar */}
