@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ShieldCheck, Zap, Globe } from 'lucide-react';
+import { PwaFooterButton } from '@/components/pwa/PwaFooterButton';
 
 export function Footer() {
   return (
@@ -87,6 +88,7 @@ export function Footer() {
                   About & Roadmap
                 </Link>
               </li>
+              <PwaFooterButton />
             </ul>
           </div>
 

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { SearchModal } from '@/components/common/SearchModal';
+import { PwaNavButton } from '@/components/pwa/PwaNavButton';
 
 interface NavToolItem {
   name: string;
@@ -476,6 +477,9 @@ export function Navbar() {
 
           {/* ================= BAGIAN KANAN: SEARCH & THEME TOGGLE ================= */}
           <div className="flex items-center gap-2">
+            {/* PWA Install Button */}
+            <PwaNavButton variant="desktop" />
+
             {/* Search Trigger Button (Compact SaaS style) */}
             <button
               onClick={() => setIsSearchOpen(true)}
@@ -519,6 +523,11 @@ export function Navbar() {
         {/* ================= MOBILE DRAWER NAVIGATION ================= */}
         {isMobileMenuOpen && (
           <div className="md:hidden px-4 pt-3 pb-6 space-y-4 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2 duration-150 max-h-[85vh] overflow-y-auto">
+            {/* Install PWA Mobile Button */}
+            <div className="pb-1">
+              <PwaNavButton variant="mobile" />
+            </div>
+
             {/* Direct Links */}
             <div className="space-y-1">
               <Link

@@ -37,6 +37,7 @@ import {
 import { TOOLS_REGISTRY, TOOL_CATEGORIES } from '@/config/tools';
 import { ToolCategory, ToolItem } from '@/types/tools';
 import { getRecentTools, getFavoriteTools, toggleFavoriteTool } from '@/lib/userPreferences';
+import { PwaHomeBanner } from '@/components/pwa/PwaHomeBanner';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   QrCode,
@@ -509,7 +510,12 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 4. Why NextByte Tools Section */}
+      {/* 4. PWA Android App Installation Banner */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        <PwaHomeBanner />
+      </section>
+
+      {/* 5. Why NextByte Tools Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
         <div className="p-8 sm:p-12 rounded-3xl bg-slate-100/60 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
           <div className="text-center max-w-2xl mx-auto mb-10">

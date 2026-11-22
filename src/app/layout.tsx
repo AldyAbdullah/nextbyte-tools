@@ -1,12 +1,22 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { ToastProvider } from '@/components/common/Toast';
+import { PwaProvider } from '@/context/PwaContext';
+import { PwaFloatingBanner } from '@/components/pwa/PwaFloatingBanner';
+import { PwaInstallGuideModal } from '@/components/pwa/PwaInstallGuideModal';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { ToolUsageTracker } from '@/components/common/ToolUsageTracker';
 import { Analytics } from '@vercel/analytics/react';
+
+export const viewport: Viewport = {
+  themeColor: '#2563eb',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -42,6 +52,12 @@ export const metadata: Metadata = {
   publisher: 'NextByte',
   alternates: {
     canonical: 'https://www.nextbyte.biz.id',
+  },
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'NextByte',
   },
   icons: {
     icon: [
@@ -97,12 +113,16 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100 transition-colors`}>
         <ThemeProvider>
           <ToastProvider>
-            <ToolUsageTracker />
-            <Navbar />
-            <main className="flex-1">
-              {children}
-            </main>
-            <Footer />
+            <PwaProvider>
+              <ToolUsageTracker />
+              <Navbar />
+              <main className="flex-1">
+                {children}
+              </main>
+              <Footer />
+              <PwaFloatingBanner />
+              <PwaInstallGuideModal />
+            </PwaProvider>
           </ToastProvider>
         </ThemeProvider>
         <Analytics />
