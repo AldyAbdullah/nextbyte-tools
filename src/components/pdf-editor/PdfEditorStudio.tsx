@@ -40,6 +40,11 @@ import {
   PdfAnnotationItem,
   applyPdfModifications,
 } from '@/lib/pdfEditorHelper';
+import {
+  runClientOcr,
+  terminateClientOcrWorker,
+  OcrLineResult,
+} from '@/lib/ocr/clientOcrEngine';
 
 interface OcrBoxItem {
   x0: number;
@@ -145,8 +150,16 @@ export function PdfEditorStudio() {
 
   // OCR state per-page
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrStatusText, setOcrStatusText] = useState('');
   const [ocrBoxes, setOcrBoxes] = useState<Record<number, OcrBoxItem[]>>({});
   const [ocrType, setOcrType] = useState<Record<number, 'scanned' | 'digital'>>({});
+
+  // Cleanup OCR WebAssembly Worker on unmount
+  useEffect(() => {
+    return () => {
+      terminateClientOcrWorker();
+    };
+  }, []);
 
   // Modals
   const [signatureModalOpen, setSignatureModalOpen] = useState(false);
@@ -386,29 +399,30 @@ export function PdfEditorStudio() {
     };
   }, [pdfDoc, docId, pageCount, rotations]);
 
-  // 4. On-Demand OCR Trigger (Per-page Server-Side OCR)
+  // 4. On-Demand OCR Trigger (Client-Side First with Server Fallback)
   const handleRunPageOcr = async () => {
     // A. If digital text already exists on this page, activate text selection immediately
     if (ocrBoxes[currentPage] && ocrBoxes[currentPage].length > 0) {
       setActiveTool('ocr_replace');
       showToast(
-        `Teks digital sudah terdeteksi (${ocrBoxes[currentPage].length} baris). Klik kotak teks untuk mengedit!`,
+        `Teks sudah terdeteksi (${ocrBoxes[currentPage].length} baris). Klik kotak teks untuk mengedit!`,
         'success'
       );
       return;
     }
 
-    // B. If scanned image, run lightweight Server-Side OCR strictly for this single page
+    // B. Run lightweight, instant Client-Side OCR with Server Fallback
     setOcrLoading(true);
-    showToast(`Memindai OCR teks pada Halaman ${currentPage + 1} di server...`, 'info');
+    setOcrStatusText('Menyiapkan...');
+    showToast(`Memindai OCR teks pada Halaman ${currentPage + 1}...`, 'info');
 
     try {
       const canvas = canvasRef.current;
       if (!canvas) throw new Error('Canvas halaman belum siap.');
 
-      // Scale canvas to optimal OCR resolution (max 1600px) for high speed & zero timeout
+      // Scale canvas to optimal OCR resolution (max 1800px) for high accuracy & zero timeout
       let ocrCanvas = canvas;
-      const maxDim = 1600;
+      const maxDim = 1800;
       if (canvas.width > maxDim || canvas.height > maxDim) {
         const scale = Math.min(maxDim / canvas.width, maxDim / canvas.height);
         const tempCanvas = document.createElement('canvas');
@@ -423,48 +437,73 @@ export function PdfEditorStudio() {
         }
       }
 
-      // Convert current page canvas to compressed JPEG blob (~150KB)
-      const blob = await new Promise<Blob | null>((resolve) =>
-        ocrCanvas.toBlob(resolve, 'image/jpeg', 0.85)
-      );
-      if (!blob) throw new Error('Gagal mengekspor gambar halaman.');
+      const scaleX = ocrCanvas.width / (pageDimensions.width || 1);
+      const scaleY = ocrCanvas.height / (pageDimensions.height || 1);
 
-      const fd = new FormData();
-      fd.append('image', blob, 'page.jpg');
-      fd.append('pageIndex', currentPage.toString());
-      fd.append('pageWidth', pageDimensions.width.toString());
-      fd.append('pageHeight', pageDimensions.height.toString());
-      fd.append('canvasWidth', ocrCanvas.width.toString());
-      fd.append('canvasHeight', ocrCanvas.height.toString());
-      fd.append('lang', 'ind+eng');
+      let detectedLines: OcrLineResult[] = [];
 
-      const res = await fetch('/api/tools/pdf-editor/ocr', {
-        method: 'POST',
-        body: fd,
-      });
+      // 1. PRIMARY ENGINE: Client-Side WebAssembly OCR (Fast, 100% private, zero server timeout)
+      try {
+        setOcrStatusText('Memindai...');
+        detectedLines = await runClientOcr(
+          ocrCanvas,
+          scaleX,
+          scaleY,
+          (_pct, status) => {
+            setOcrStatusText(status);
+          },
+          'ind+eng'
+        );
+      } catch (clientErr) {
+        console.warn('Client-side OCR warning, fallback ke server:', clientErr);
+        setOcrStatusText('Fallback...');
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Server OCR gagal (status ${res.status})`);
+        // 2. SECONDARY ENGINE: Server-side OCR Fallback
+        const blob = await new Promise<Blob | null>((resolve) =>
+          ocrCanvas.toBlob(resolve, 'image/jpeg', 0.85)
+        );
+        if (!blob) throw new Error('Gagal mengekspor gambar halaman.');
+
+        const fd = new FormData();
+        fd.append('image', blob, 'page.jpg');
+        fd.append('pageIndex', currentPage.toString());
+        fd.append('pageWidth', pageDimensions.width.toString());
+        fd.append('pageHeight', pageDimensions.height.toString());
+        fd.append('canvasWidth', ocrCanvas.width.toString());
+        fd.append('canvasHeight', ocrCanvas.height.toString());
+        fd.append('lang', 'ind+eng');
+
+        const res = await fetch('/api/tools/pdf-editor/ocr', {
+          method: 'POST',
+          body: fd,
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `OCR gagal (status ${res.status})`);
+        }
+
+        const data = await res.json();
+        detectedLines = data.lines || [];
       }
 
-      const data = await res.json();
-      if (data.lines && data.lines.length > 0) {
-        setOcrBoxes((prev) => ({ ...prev, [currentPage]: data.lines }));
+      if (detectedLines && detectedLines.length > 0) {
+        setOcrBoxes((prev) => ({ ...prev, [currentPage]: detectedLines }));
         setOcrType((prev) => ({ ...prev, [currentPage]: 'scanned' }));
         setActiveTool('ocr_replace');
         showToast(
-          `OCR Selesai! Terdeteksi ${data.lines.length} baris teks. Klik kotak teks untuk mengedit.`,
+          `OCR Selesai! Terdeteksi ${detectedLines.length} baris teks. Klik kotak teks untuk mengedit.`,
           'success'
         );
       } else {
-        showToast('Tidak ada teks terdeteksi pada halaman scan ini.', 'info');
+        showToast('Tidak ada teks terbaca pada halaman ini. Pastikan dokumen cukup terang dan jelas.', 'info');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Terjadi kendala OCR';
       showToast(`OCR gagal: ${msg}`, 'error');
     } finally {
       setOcrLoading(false);
+      setOcrStatusText('');
     }
   };
 
@@ -1180,7 +1219,7 @@ export function PdfEditorStudio() {
                 ) : (
                   <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 )}
-                <span>{ocrLoading ? 'Memindai...' : 'OCR Halaman Ini'}</span>
+                <span>{ocrLoading ? (ocrStatusText || 'Memindai...') : 'OCR Halaman Ini'}</span>
               </button>
 
               {/* Zoom Controls */}

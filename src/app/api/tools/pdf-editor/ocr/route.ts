@@ -70,8 +70,8 @@ export async function POST(req: NextRequest) {
       workerOptions.cacheMethod = 'readOnly';
       workerOptions.gzip = false;
     } else {
-      // If local files not bundled by serverless, fall back to official CDN with /tmp cache
-      workerOptions.langPath = 'https://tessdata.projectnaptha.com/4.0.0';
+      // Fallback to high-reliability jsDelivr CDN
+      workerOptions.langPath = 'https://cdn.jsdelivr.net/gh/naptha/tessdata@4.0.0';
       workerOptions.gzip = true;
     }
 
@@ -80,7 +80,11 @@ export async function POST(req: NextRequest) {
       worker = await createWorker(lang, 1, workerOptions);
     } catch (langErr) {
       console.warn(`Failed to initialize OCR with lang "${lang}", falling back to "eng":`, langErr);
-      worker = await createWorker('eng', 1, workerOptions);
+      worker = await createWorker('eng', 1, {
+        ...workerOptions,
+        langPath: 'https://cdn.jsdelivr.net/gh/naptha/tessdata@4.0.0',
+        gzip: true,
+      });
     }
 
     const ret = await worker.recognize(imageBuffer, {}, { blocks: true });
